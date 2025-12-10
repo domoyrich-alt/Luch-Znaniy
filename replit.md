@@ -29,9 +29,16 @@ Preferred communication style: Simple, everyday language.
 - **Storage**: Abstracted storage interface (`IStorage`) with in-memory implementation for development
 
 ### Authentication Flow
-- Invite code-based enrollment (format: "9A-X7B3", "10B-Y8C4")
-- Four user roles: Student, Teacher, Director, Curator
+- Invite code-based enrollment (format: "9A-X7B3", "10B-Y8C4", "TEACH-001", "DIR-001", "CUR-001", "COOK-001")
+- Five user roles: Student, Teacher, Director, Curator, Cook
 - Mock authentication currently implemented in `AuthContext`
+
+### Role-Based Permissions
+- **Students**: Read-only access (view grades, schedule, events, cafeteria menu)
+- **Teachers**: Edit schedule, class composition, events, homework, grades
+- **Curators**: Edit schedule, class composition, manage events, announcements, homework, grades  
+- **Directors**: Full access to all features including cafeteria menu editing
+- **Cooks**: Edit cafeteria menu only
 
 ### Key Design Patterns
 - Path aliases (`@/` for client, `@shared/` for shared code)

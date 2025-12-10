@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, Pressable, Alert, Switch, Modal, TextInput } from "react-native";
+import { View, StyleSheet, ScrollView, Pressable, Alert, Switch, Modal, TextInput, Platform } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -35,11 +35,22 @@ export default function ProfileScreen() {
   const [firstName, setFirstName] = useState(user?.firstName || "");
   const [lastName, setLastName] = useState(user?.lastName || "");
 
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+
   const handleLogout = () => {
-    Alert.alert("Выход", "Вы уверены, что хотите выйти?", [
-      { text: "Отмена", style: "cancel" },
-      { text: "Выйти", style: "destructive", onPress: logout },
-    ]);
+    if (Platform.OS === "web") {
+      setLogoutModalVisible(true);
+    } else {
+      Alert.alert("Выход", "Вы уверены, что хотите выйти?", [
+        { text: "Отмена", style: "cancel" },
+        { text: "Выйти", style: "destructive", onPress: logout },
+      ]);
+    }
+  };
+
+  const confirmLogout = () => {
+    setLogoutModalVisible(false);
+    logout();
   };
 
   const handleSaveProfile = () => {
@@ -315,6 +326,31 @@ export default function ProfileScreen() {
                 ) : null}
               </Pressable>
             ))}
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={logoutModalVisible} animationType="fade" transparent>
+        <Pressable style={styles.modalOverlay} onPress={() => setLogoutModalVisible(false)}>
+          <View style={[styles.themeModalContent, { backgroundColor: theme.backgroundRoot }]}>
+            <ThemedText type="h4" style={styles.themeModalTitle}>Выход</ThemedText>
+            <ThemedText type="body" style={{ textAlign: "center", marginBottom: Spacing.lg }}>
+              Вы уверены, что хотите выйти?
+            </ThemedText>
+            <View style={{ flexDirection: "row", gap: Spacing.md }}>
+              <Pressable
+                onPress={() => setLogoutModalVisible(false)}
+                style={[styles.themeOption, { flex: 1, justifyContent: "center", borderColor: theme.border }]}
+              >
+                <ThemedText type="body">Отмена</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={confirmLogout}
+                style={[styles.themeOption, { flex: 1, justifyContent: "center", backgroundColor: Colors.light.error, borderColor: Colors.light.error }]}
+              >
+                <ThemedText type="body" style={{ color: "#FFFFFF" }}>Выйти</ThemedText>
+              </Pressable>
+            </View>
           </View>
         </Pressable>
       </Modal>
