@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
+import { getApiUrl, apiRequest } from "@/lib/query-client";
+import { useAuth } from "./AuthContext";
 
 export interface Attendance {
   date: string;
@@ -9,6 +11,7 @@ export interface Attendance {
 export interface Grade {
   id: string;
   subject: string;
+  subjectId: number;
   value: number;
   date: string;
   comment?: string;
@@ -17,6 +20,7 @@ export interface Grade {
 export interface Homework {
   id: string;
   subject: string;
+  subjectId: number;
   title: string;
   description: string;
   deadline: string;
@@ -27,10 +31,11 @@ export interface Homework {
 
 export interface MenuItem {
   id: string;
-  category: "first" | "main" | "salad" | "drink";
+  category: string;
   name: string;
-  rating: number;
-  ratingCount: number;
+  description?: string;
+  price: number;
+  isAvailable: boolean;
 }
 
 export interface Event {
@@ -38,7 +43,9 @@ export interface Event {
   title: string;
   description: string;
   date: string;
-  type: "school" | "class" | "optional";
+  time?: string;
+  location?: string;
+  type: "school" | "class" | "optional" | "event";
   confirmed: boolean;
   participantCount: number;
 }
@@ -49,32 +56,7 @@ export interface Announcement {
   content: string;
   date: string;
   author: string;
-}
-
-interface AppContextType {
-  attendance: Attendance[];
-  markAttendance: (status: "present" | "late") => void;
-  todayAttendance: Attendance | null;
-  grades: Grade[];
-  homework: Homework[];
-  submitHomework: (id: string) => void;
-  menuItems: MenuItem[];
-  rateMenuItem: (id: string, rating: number) => void;
-  addMenuItem: (item: Omit<MenuItem, "id" | "rating" | "ratingCount">) => void;
-  updateMenuItem: (id: string, item: Partial<MenuItem>) => void;
-  deleteMenuItem: (id: string) => void;
-  events: Event[];
-  toggleEventConfirmation: (id: string) => void;
-  addEvent: (event: Omit<Event, "id" | "confirmed" | "participantCount">) => void;
-  updateEvent: (id: string, event: Partial<Event>) => void;
-  deleteEvent: (id: string) => void;
-  announcements: Announcement[];
-  schedule: ScheduleItem[];
-  addScheduleItem: (item: Omit<ScheduleItem, "id">) => void;
-  updateScheduleItem: (id: string, item: Partial<ScheduleItem>) => void;
-  deleteScheduleItem: (id: string) => void;
-  isEvenWeek: boolean;
-  toggleWeekType: () => void;
+  isImportant: boolean;
 }
 
 export interface ScheduleItem {
@@ -83,143 +65,226 @@ export interface ScheduleItem {
   startTime: string;
   endTime: string;
   subject: string;
+  subjectId: number;
   room: string;
   teacher: string;
   isEvenWeek: boolean | null;
 }
 
+export interface Subject {
+  id: number;
+  name: string;
+}
+
+interface AppContextType {
+  attendance: Attendance[];
+  markAttendance: (status: "present" | "late") => void;
+  todayAttendance: Attendance | null;
+  grades: Grade[];
+  averageGrade: number;
+  homework: Homework[];
+  submitHomework: (id: string, content?: string, photoUrl?: string) => Promise<void>;
+  menuItems: MenuItem[];
+  addMenuItem: (item: Omit<MenuItem, "id">) => Promise<void>;
+  updateMenuItem: (id: string, item: Partial<MenuItem>) => Promise<void>;
+  deleteMenuItem: (id: string) => Promise<void>;
+  events: Event[];
+  toggleEventConfirmation: (id: string) => void;
+  addEvent: (event: Omit<Event, "id" | "confirmed" | "participantCount">) => Promise<void>;
+  updateEvent: (id: string, event: Partial<Event>) => Promise<void>;
+  deleteEvent: (id: string) => Promise<void>;
+  announcements: Announcement[];
+  addAnnouncement: (announcement: Omit<Announcement, "id" | "date" | "author">) => Promise<void>;
+  schedule: ScheduleItem[];
+  addScheduleItem: (item: Omit<ScheduleItem, "id">) => Promise<void>;
+  updateScheduleItem: (id: string, item: Partial<ScheduleItem>) => Promise<void>;
+  deleteScheduleItem: (id: string) => Promise<void>;
+  isEvenWeek: boolean;
+  toggleWeekType: () => void;
+  subjects: Subject[];
+  refreshData: () => void;
+  isLoading: boolean;
+}
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const MOCK_GRADES: Grade[] = [
-  { id: "1", subject: "Математика", value: 5, date: "2024-12-09", comment: "Отлично" },
-  { id: "2", subject: "Математика", value: 4, date: "2024-12-06" },
-  { id: "3", subject: "Русский язык", value: 5, date: "2024-12-09" },
-  { id: "4", subject: "Физика", value: 4, date: "2024-12-08" },
-  { id: "5", subject: "История", value: 5, date: "2024-12-07" },
-  { id: "6", subject: "Английский", value: 4, date: "2024-12-06" },
-  { id: "7", subject: "Химия", value: 3, date: "2024-12-05" },
-  { id: "8", subject: "Биология", value: 5, date: "2024-12-04" },
-];
-
-const MOCK_HOMEWORK: Homework[] = [
-  {
-    id: "1",
-    subject: "Математика",
-    title: "Решить уравнения",
-    description: "Упражнения 1-10, стр. 45",
-    deadline: "2024-12-12",
-    status: "pending",
-  },
-  {
-    id: "2",
-    subject: "Русский язык",
-    title: "Сочинение",
-    description: "Написать сочинение на тему 'Моя семья'",
-    deadline: "2024-12-13",
-    status: "pending",
-  },
-  {
-    id: "3",
-    subject: "Физика",
-    title: "Лабораторная работа",
-    description: "Выполнить лабораторную работу №5",
-    deadline: "2024-12-11",
-    status: "submitted",
-  },
-];
-
-const MOCK_MENU: MenuItem[] = [
-  { id: "1", category: "first", name: "Борщ со сметаной", rating: 4.2, ratingCount: 45 },
-  { id: "2", category: "main", name: "Котлета с пюре", rating: 4.5, ratingCount: 52 },
-  { id: "3", category: "salad", name: "Салат витаминный", rating: 3.8, ratingCount: 38 },
-  { id: "4", category: "drink", name: "Компот из сухофруктов", rating: 4.0, ratingCount: 41 },
-];
-
-const MOCK_EVENTS: Event[] = [
-  {
-    id: "1",
-    title: "Новогодний концерт",
-    description: "Праздничное представление для учеников и родителей",
-    date: "2024-12-25",
-    type: "school",
-    confirmed: false,
-    participantCount: 156,
-  },
-  {
-    id: "2",
-    title: "Классный час",
-    description: "Обсуждение итогов четверти",
-    date: "2024-12-15",
-    type: "class",
-    confirmed: true,
-    participantCount: 28,
-  },
-  {
-    id: "3",
-    title: "Олимпиада по математике",
-    description: "Школьный этап олимпиады",
-    date: "2024-12-18",
-    type: "optional",
-    confirmed: false,
-    participantCount: 34,
-  },
-];
-
-const MOCK_ANNOUNCEMENTS: Announcement[] = [
-  {
-    id: "1",
-    title: "Каникулы",
-    content: "Зимние каникулы с 28 декабря по 8 января",
-    date: "2024-12-10",
-    author: "Администрация",
-  },
-  {
-    id: "2",
-    title: "Родительское собрание",
-    content: "Приглашаем родителей на собрание 20 декабря в 18:00",
-    date: "2024-12-09",
-    author: "Классный руководитель",
-  },
-];
-
-const MOCK_SCHEDULE: ScheduleItem[] = [
-  { id: "1", day: 1, startTime: "08:30", endTime: "09:15", subject: "Математика", room: "201", teacher: "Иванова А.П.", isEvenWeek: null },
-  { id: "2", day: 1, startTime: "09:25", endTime: "10:10", subject: "Русский язык", room: "305", teacher: "Петрова М.И.", isEvenWeek: null },
-  { id: "3", day: 1, startTime: "10:30", endTime: "11:15", subject: "Физика", room: "402", teacher: "Сидоров К.В.", isEvenWeek: null },
-  { id: "4", day: 1, startTime: "11:25", endTime: "12:10", subject: "История", room: "203", teacher: "Козлова Е.А.", isEvenWeek: null },
-  { id: "5", day: 1, startTime: "12:30", endTime: "13:15", subject: "Английский", room: "108", teacher: "Смирнова Л.Н.", isEvenWeek: true },
-  { id: "6", day: 1, startTime: "12:30", endTime: "13:15", subject: "Информатика", room: "301", teacher: "Кузнецов Д.С.", isEvenWeek: false },
-  { id: "7", day: 2, startTime: "08:30", endTime: "09:15", subject: "Химия", room: "401", teacher: "Волкова Н.П.", isEvenWeek: null },
-  { id: "8", day: 2, startTime: "09:25", endTime: "10:10", subject: "Биология", room: "403", teacher: "Морозова О.В.", isEvenWeek: null },
-  { id: "9", day: 2, startTime: "10:30", endTime: "11:15", subject: "География", room: "204", teacher: "Новиков П.А.", isEvenWeek: null },
-  { id: "10", day: 2, startTime: "11:25", endTime: "12:10", subject: "Литература", room: "305", teacher: "Петрова М.И.", isEvenWeek: null },
-  { id: "11", day: 3, startTime: "08:30", endTime: "09:15", subject: "Алгебра", room: "201", teacher: "Иванова А.П.", isEvenWeek: null },
-  { id: "12", day: 3, startTime: "09:25", endTime: "10:10", subject: "Геометрия", room: "201", teacher: "Иванова А.П.", isEvenWeek: null },
-  { id: "13", day: 3, startTime: "10:30", endTime: "11:15", subject: "Физкультура", room: "Спортзал", teacher: "Соколов В.М.", isEvenWeek: null },
-  { id: "14", day: 3, startTime: "11:25", endTime: "12:10", subject: "ОБЖ", room: "105", teacher: "Федоров А.И.", isEvenWeek: null },
-  { id: "15", day: 4, startTime: "08:30", endTime: "09:15", subject: "Русский язык", room: "305", teacher: "Петрова М.И.", isEvenWeek: null },
-  { id: "16", day: 4, startTime: "09:25", endTime: "10:10", subject: "Математика", room: "201", teacher: "Иванова А.П.", isEvenWeek: null },
-  { id: "17", day: 4, startTime: "10:30", endTime: "11:15", subject: "Физика", room: "402", teacher: "Сидоров К.В.", isEvenWeek: null },
-  { id: "18", day: 4, startTime: "11:25", endTime: "12:10", subject: "Обществознание", room: "203", teacher: "Козлова Е.А.", isEvenWeek: null },
-  { id: "19", day: 5, startTime: "08:30", endTime: "09:15", subject: "Английский", room: "108", teacher: "Смирнова Л.Н.", isEvenWeek: null },
-  { id: "20", day: 5, startTime: "09:25", endTime: "10:10", subject: "Химия", room: "401", teacher: "Волкова Н.П.", isEvenWeek: null },
-  { id: "21", day: 5, startTime: "10:30", endTime: "11:15", subject: "Музыка", room: "102", teacher: "Белова Т.С.", isEvenWeek: true },
-  { id: "22", day: 5, startTime: "10:30", endTime: "11:15", subject: "ИЗО", room: "103", teacher: "Орлова И.К.", isEvenWeek: false },
-  { id: "23", day: 6, startTime: "08:30", endTime: "09:15", subject: "Литература", room: "305", teacher: "Петрова М.И.", isEvenWeek: null },
-  { id: "24", day: 6, startTime: "09:25", endTime: "10:10", subject: "История", room: "203", teacher: "Козлова Е.А.", isEvenWeek: null },
-  { id: "25", day: 6, startTime: "10:30", endTime: "11:15", subject: "Технология", room: "Мастерская", teacher: "Павлов Г.Р.", isEvenWeek: null },
-];
-
 export function AppProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [attendance, setAttendance] = useState<Attendance[]>([]);
-  const [homework, setHomework] = useState<Homework[]>(MOCK_HOMEWORK);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(MOCK_MENU);
-  const [events, setEvents] = useState<Event[]>(MOCK_EVENTS);
-  const [schedule, setSchedule] = useState<ScheduleItem[]>(MOCK_SCHEDULE);
+  const [grades, setGrades] = useState<Grade[]>([]);
+  const [averageGrade, setAverageGrade] = useState(0);
+  const [homework, setHomework] = useState<Homework[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [isEvenWeek, setIsEvenWeek] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   const today = new Date().toISOString().split("T")[0];
   const todayAttendance = attendance.find((a) => a.date === today) || null;
+
+  const fetchCafeteriaMenu = useCallback(async () => {
+    try {
+      const response = await fetch(new URL("/api/cafeteria", getApiUrl()).toString());
+      if (response.ok) {
+        const data = await response.json();
+        setMenuItems(data.map((item: any) => ({
+          id: item.id.toString(),
+          category: item.category,
+          name: item.name,
+          description: item.description || "",
+          price: parseFloat(item.price) || 0,
+          isAvailable: item.isAvailable !== false,
+        })));
+      }
+    } catch (e) {
+      console.error("Failed to fetch cafeteria menu:", e);
+    }
+  }, []);
+
+  const fetchEvents = useCallback(async () => {
+    try {
+      const url = new URL("/api/events", getApiUrl());
+      if (user?.classId) {
+        url.searchParams.set("classId", user.classId.toString());
+      }
+      const response = await fetch(url.toString());
+      if (response.ok) {
+        const data = await response.json();
+        setEvents(data.map((event: any) => ({
+          id: event.id.toString(),
+          title: event.title,
+          description: event.description || "",
+          date: event.date,
+          time: event.time,
+          location: event.location,
+          type: event.type || "event",
+          confirmed: false,
+          participantCount: 0,
+        })));
+      }
+    } catch (e) {
+      console.error("Failed to fetch events:", e);
+    }
+  }, [user?.classId]);
+
+  const fetchNews = useCallback(async () => {
+    try {
+      const response = await fetch(new URL("/api/news", getApiUrl()).toString());
+      if (response.ok) {
+        const data = await response.json();
+        setAnnouncements(data.map((item: any) => ({
+          id: item.id.toString(),
+          title: item.title,
+          content: item.content,
+          date: item.createdAt?.split("T")[0] || new Date().toISOString().split("T")[0],
+          author: "Администрация",
+          isImportant: item.isImportant,
+        })));
+      }
+    } catch (e) {
+      console.error("Failed to fetch news:", e);
+    }
+  }, []);
+
+  const fetchGrades = useCallback(async () => {
+    if (!user?.id || user.role !== "student") return;
+    try {
+      const response = await fetch(new URL(`/api/grades/${user.id}`, getApiUrl()).toString());
+      if (response.ok) {
+        const data = await response.json();
+        setAverageGrade(data.averageGrade || 0);
+        setGrades(data.grades?.map((grade: any) => ({
+          id: grade.id.toString(),
+          subject: grade.subjectName || "Предмет",
+          subjectId: grade.subjectId,
+          value: grade.grade,
+          date: grade.date,
+          comment: grade.comment,
+        })) || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch grades:", e);
+    }
+  }, [user?.id, user?.role]);
+
+  const fetchHomework = useCallback(async () => {
+    if (!user?.classId) return;
+    try {
+      const response = await fetch(new URL(`/api/homework/${user.classId}`, getApiUrl()).toString());
+      if (response.ok) {
+        const data = await response.json();
+        setHomework(data.map((hw: any) => ({
+          id: hw.id.toString(),
+          subject: hw.subjectName || "Предмет",
+          subjectId: hw.subjectId,
+          title: hw.title,
+          description: hw.description || "",
+          deadline: hw.dueDate,
+          status: "pending",
+        })));
+      }
+    } catch (e) {
+      console.error("Failed to fetch homework:", e);
+    }
+  }, [user?.classId]);
+
+  const fetchSchedule = useCallback(async () => {
+    if (!user?.classId) return;
+    try {
+      const response = await fetch(new URL(`/api/schedule/${user.classId}`, getApiUrl()).toString());
+      if (response.ok) {
+        const data = await response.json();
+        setSchedule(data.map((item: any) => ({
+          id: item.id.toString(),
+          day: item.dayOfWeek,
+          startTime: item.startTime,
+          endTime: item.endTime,
+          subject: item.subjectName || "Предмет",
+          subjectId: item.subjectId,
+          room: item.room || "",
+          teacher: item.teacherName || "",
+          isEvenWeek: item.isEvenWeek,
+        })));
+      }
+    } catch (e) {
+      console.error("Failed to fetch schedule:", e);
+    }
+  }, [user?.classId]);
+
+  const fetchSubjects = useCallback(async () => {
+    if (!user?.classId) return;
+    try {
+      const response = await fetch(new URL(`/api/subjects/${user.classId}`, getApiUrl()).toString());
+      if (response.ok) {
+        const data = await response.json();
+        setSubjects(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch subjects:", e);
+    }
+  }, [user?.classId]);
+
+  const refreshData = useCallback(() => {
+    setIsLoading(true);
+    Promise.all([
+      fetchCafeteriaMenu(),
+      fetchEvents(),
+      fetchNews(),
+      fetchGrades(),
+      fetchHomework(),
+      fetchSchedule(),
+      fetchSubjects(),
+    ]).finally(() => setIsLoading(false));
+  }, [fetchCafeteriaMenu, fetchEvents, fetchNews, fetchGrades, fetchHomework, fetchSchedule, fetchSubjects]);
+
+  useEffect(() => {
+    if (user) {
+      refreshData();
+    }
+  }, [user, refreshData]);
 
   const markAttendance = (status: "present" | "late") => {
     const now = new Date();
@@ -231,38 +296,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAttendance((prev) => [...prev.filter((a) => a.date !== today), newAttendance]);
   };
 
-  const rateMenuItem = (id: string, rating: number) => {
-    setMenuItems((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              rating: (item.rating * item.ratingCount + rating) / (item.ratingCount + 1),
-              ratingCount: item.ratingCount + 1,
-            }
-          : item
-      )
-    );
+  const addMenuItem = async (item: Omit<MenuItem, "id">) => {
+    try {
+      const payload = {
+        name: item.name,
+        category: item.category,
+        description: item.description || "",
+        price: (item.price || 0).toString(),
+        isAvailable: item.isAvailable !== false,
+      };
+      const response = await apiRequest("POST", "/api/cafeteria", payload);
+      const newItem = await response.json();
+      setMenuItems((prev) => [...prev, {
+        id: newItem.id.toString(),
+        category: newItem.category,
+        name: newItem.name,
+        description: newItem.description,
+        price: parseFloat(newItem.price) || 0,
+        isAvailable: newItem.isAvailable !== false,
+      }]);
+    } catch (e) {
+      console.error("Failed to add menu item:", e);
+    }
   };
 
-  const addMenuItem = (item: Omit<MenuItem, "id" | "rating" | "ratingCount">) => {
-    const newItem: MenuItem = {
-      ...item,
-      id: Date.now().toString(),
-      rating: 0,
-      ratingCount: 0,
-    };
-    setMenuItems((prev) => [...prev, newItem]);
+  const updateMenuItem = async (id: string, updates: Partial<MenuItem>) => {
+    try {
+      const payload: any = { ...updates };
+      if (payload.price !== undefined) {
+        payload.price = payload.price.toString();
+      }
+      await apiRequest("PUT", `/api/cafeteria/${id}`, payload);
+      setMenuItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+      );
+    } catch (e) {
+      console.error("Failed to update menu item:", e);
+    }
   };
 
-  const updateMenuItem = (id: string, updates: Partial<MenuItem>) => {
-    setMenuItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
-    );
-  };
-
-  const deleteMenuItem = (id: string) => {
-    setMenuItems((prev) => prev.filter((item) => item.id !== id));
+  const deleteMenuItem = async (id: string) => {
+    try {
+      await apiRequest("DELETE", `/api/cafeteria/${id}`);
+      setMenuItems((prev) => prev.filter((item) => item.id !== id));
+    } catch (e) {
+      console.error("Failed to delete menu item:", e);
+    }
   };
 
   const toggleEventConfirmation = (id: string) => {
@@ -281,54 +360,144 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const addEvent = (event: Omit<Event, "id" | "confirmed" | "participantCount">) => {
-    const newEvent: Event = {
-      ...event,
-      id: Date.now().toString(),
-      confirmed: false,
-      participantCount: 0,
-    };
-    setEvents((prev) => [...prev, newEvent]);
+  const addEvent = async (event: Omit<Event, "id" | "confirmed" | "participantCount">) => {
+    try {
+      const response = await apiRequest("POST", "/api/events", {
+        ...event,
+        classId: user?.classId,
+        createdById: user?.id,
+      });
+      const newEvent = await response.json();
+      setEvents((prev) => [...prev, {
+        id: newEvent.id.toString(),
+        title: newEvent.title,
+        description: newEvent.description || "",
+        date: newEvent.date,
+        time: newEvent.time,
+        location: newEvent.location,
+        type: newEvent.type || "event",
+        confirmed: false,
+        participantCount: 0,
+      }]);
+    } catch (e) {
+      console.error("Failed to add event:", e);
+    }
   };
 
-  const updateEvent = (id: string, updates: Partial<Event>) => {
-    setEvents((prev) =>
-      prev.map((event) => (event.id === id ? { ...event, ...updates } : event))
-    );
+  const updateEvent = async (id: string, updates: Partial<Event>) => {
+    try {
+      await apiRequest("PUT", `/api/events/${id}`, updates);
+      setEvents((prev) =>
+        prev.map((event) => (event.id === id ? { ...event, ...updates } : event))
+      );
+    } catch (e) {
+      console.error("Failed to update event:", e);
+    }
   };
 
-  const deleteEvent = (id: string) => {
-    setEvents((prev) => prev.filter((event) => event.id !== id));
+  const deleteEvent = async (id: string) => {
+    try {
+      await apiRequest("DELETE", `/api/events/${id}`);
+      setEvents((prev) => prev.filter((event) => event.id !== id));
+    } catch (e) {
+      console.error("Failed to delete event:", e);
+    }
   };
 
-  const addScheduleItem = (item: Omit<ScheduleItem, "id">) => {
-    const newItem: ScheduleItem = {
-      ...item,
-      id: Date.now().toString(),
-    };
-    setSchedule((prev) => [...prev, newItem]);
+  const addAnnouncement = async (announcement: Omit<Announcement, "id" | "date" | "author">) => {
+    try {
+      const response = await apiRequest("POST", "/api/news", {
+        ...announcement,
+        createdById: user?.id,
+      });
+      const newItem = await response.json();
+      setAnnouncements((prev) => [...prev, {
+        id: newItem.id.toString(),
+        title: newItem.title,
+        content: newItem.content,
+        date: new Date().toISOString().split("T")[0],
+        author: user?.name || "Администрация",
+        isImportant: newItem.isImportant,
+      }]);
+    } catch (e) {
+      console.error("Failed to add announcement:", e);
+    }
   };
 
-  const updateScheduleItem = (id: string, updates: Partial<ScheduleItem>) => {
-    setSchedule((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
-    );
+  const addScheduleItem = async (item: Omit<ScheduleItem, "id">) => {
+    try {
+      const response = await apiRequest("POST", "/api/schedule", {
+        classId: user?.classId,
+        subjectId: item.subjectId,
+        teacherId: user?.id,
+        dayOfWeek: item.day,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        room: item.room,
+        isEvenWeek: item.isEvenWeek,
+      });
+      const newItem = await response.json();
+      setSchedule((prev) => [...prev, {
+        id: newItem.id.toString(),
+        day: newItem.dayOfWeek,
+        startTime: newItem.startTime,
+        endTime: newItem.endTime,
+        subject: item.subject,
+        subjectId: newItem.subjectId,
+        room: newItem.room || "",
+        teacher: item.teacher,
+        isEvenWeek: newItem.isEvenWeek,
+      }]);
+    } catch (e) {
+      console.error("Failed to add schedule item:", e);
+    }
   };
 
-  const deleteScheduleItem = (id: string) => {
-    setSchedule((prev) => prev.filter((item) => item.id !== id));
+  const updateScheduleItem = async (id: string, updates: Partial<ScheduleItem>) => {
+    try {
+      await apiRequest("PUT", `/api/schedule/${id}`, {
+        dayOfWeek: updates.day,
+        startTime: updates.startTime,
+        endTime: updates.endTime,
+        room: updates.room,
+        isEvenWeek: updates.isEvenWeek,
+      });
+      setSchedule((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+      );
+    } catch (e) {
+      console.error("Failed to update schedule item:", e);
+    }
+  };
+
+  const deleteScheduleItem = async (id: string) => {
+    try {
+      await apiRequest("DELETE", `/api/schedule/${id}`);
+      setSchedule((prev) => prev.filter((item) => item.id !== id));
+    } catch (e) {
+      console.error("Failed to delete schedule item:", e);
+    }
   };
 
   const toggleWeekType = () => {
     setIsEvenWeek((prev) => !prev);
   };
 
-  const submitHomework = (id: string) => {
-    setHomework((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, status: "submitted" as const } : item
-      )
-    );
+  const submitHomework = async (id: string, content?: string, photoUrl?: string) => {
+    try {
+      await apiRequest("POST", `/api/homework/${id}/submit`, {
+        studentId: user?.id,
+        content,
+        photoUrl,
+      });
+      setHomework((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, status: "submitted" as const } : item
+        )
+      );
+    } catch (e) {
+      console.error("Failed to submit homework:", e);
+    }
   };
 
   return (
@@ -337,11 +506,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         attendance,
         markAttendance,
         todayAttendance,
-        grades: MOCK_GRADES,
+        grades,
+        averageGrade,
         homework,
         submitHomework,
         menuItems,
-        rateMenuItem,
         addMenuItem,
         updateMenuItem,
         deleteMenuItem,
@@ -350,13 +519,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addEvent,
         updateEvent,
         deleteEvent,
-        announcements: MOCK_ANNOUNCEMENTS,
+        announcements,
+        addAnnouncement,
         schedule,
         addScheduleItem,
         updateScheduleItem,
         deleteScheduleItem,
         isEvenWeek,
         toggleWeekType,
+        subjects,
+        refreshData,
+        isLoading,
       }}
     >
       {children}

@@ -1,17 +1,17 @@
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getApiUrl } from "@/lib/query-client";
 
 export type UserRole = "student" | "teacher" | "director" | "curator" | "cook";
 
 export interface User {
-  id: string;
+  id: number;
+  firstName: string;
+  lastName: string;
   name: string;
-  firstName?: string;
-  lastName?: string;
-  email: string;
   role: UserRole;
-  classId: string;
+  classId: number | null;
   className: string;
-  avatarUrl?: string;
 }
 
 export interface Permissions {
@@ -84,91 +84,116 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   permissions: Permissions;
-  login: (inviteCode: string, role: UserRole) => void;
+  isLoading: boolean;
+  error: string | null;
+  login: (inviteCode: string, role: UserRole, firstName?: string, lastName?: string) => Promise<void>;
   logout: () => void;
   updateUserProfile: (updates: { firstName?: string; lastName?: string }) => void;
+  verifyCode: (code: string) => Promise<{ valid: boolean; role?: string; className?: string; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const MOCK_USERS: Record<string, User> = {
-  "9A-X7B3": {
-    id: "1",
-    name: "Алексей Иванов",
-    email: "alex@school.edu",
-    role: "student",
-    classId: "9A",
-    className: "9А класс",
-  },
-  "TEACH-001": {
-    id: "2",
-    name: "Мария Петрова",
-    email: "maria@school.edu",
-    role: "teacher",
-    classId: "9A",
-    className: "9А класс",
-  },
-  "DIR-001": {
-    id: "3",
-    name: "Сергей Сидоров",
-    email: "director@school.edu",
-    role: "director",
-    classId: "ALL",
-    className: "Директор",
-  },
-  "CUR-001": {
-    id: "4",
-    name: "Елена Козлова",
-    email: "curator@school.edu",
-    role: "curator",
-    classId: "ALL",
-    className: "Куратор",
-  },
-  "COOK-001": {
-    id: "5",
-    name: "Наталья Повар",
-    email: "cook@school.edu",
-    role: "cook",
-    classId: "KITCHEN",
-    className: "Столовая",
-  },
-};
-
 const defaultPermissions = getRolePermissions("student");
+const USER_STORAGE_KEY = "luch_znaniy_user";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const login = (inviteCode: string, role: UserRole) => {
-    const foundUser = MOCK_USERS[inviteCode];
-    if (foundUser) {
-      setUser({ ...foundUser, role });
-    } else {
-      setUser({
-        id: Date.now().toString(),
-        name: "Пользователь",
-        email: "user@school.edu",
-        role,
-        classId: inviteCode.split("-")[0] || "9A",
-        className: `${inviteCode.split("-")[0] || "9A"} класс`,
-      });
+  useEffect(() => {
+    loadStoredUser();
+  }, []);
+
+  const loadStoredUser = async () => {
+    try {
+      const storedUser = await AsyncStorage.getItem(USER_STORAGE_KEY);
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      }
+    } catch (e) {
+      console.error("Failed to load user from storage:", e);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const logout = () => {
-    setUser(null);
+  const verifyCode = async (code: string): Promise<{ valid: boolean; role?: string; className?: string; error?: string }> => {
+    try {
+      const response = await fetch(new URL(`/api/verify-code/${code}`, getApiUrl()).toString());
+      
+      if (!response.ok) {
+        const data = await response.json();
+        return { valid: false, error: data.error || "Неверный код" };
+      }
+      
+      const data = await response.json();
+      return { valid: true, role: data.role, className: data.className };
+    } catch (e) {
+      console.error("Verify code error:", e);
+      return { valid: false, error: "Ошибка проверки кода" };
+    }
   };
 
-  const updateUserProfile = (updates: { firstName?: string; lastName?: string }) => {
+  const login = async (inviteCode: string, role: UserRole, firstName?: string, lastName?: string) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(new URL("/api/auth/login", getApiUrl()).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          inviteCode,
+          role,
+          firstName: firstName || "Пользователь",
+          lastName: lastName || "",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || "Ошибка входа");
+        return;
+      }
+
+      const newUser: User = {
+        id: data.user.id,
+        firstName: data.user.firstName,
+        lastName: data.user.lastName,
+        name: `${data.user.firstName} ${data.user.lastName}`.trim(),
+        role: data.user.role,
+        classId: data.user.classId,
+        className: data.user.className || getRoleLabel(data.user.role),
+      };
+
+      setUser(newUser);
+      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
+    } catch (e) {
+      console.error("Login error:", e);
+      setError("Ошибка подключения к серверу");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    setUser(null);
+    await AsyncStorage.removeItem(USER_STORAGE_KEY);
+  };
+
+  const updateUserProfile = async (updates: { firstName?: string; lastName?: string }) => {
     if (user) {
       const updatedUser = {
         ...user,
-        ...updates,
-        name: updates.firstName && updates.lastName 
-          ? `${updates.firstName} ${updates.lastName}` 
-          : user.name,
+        firstName: updates.firstName || user.firstName,
+        lastName: updates.lastName || user.lastName,
+        name: `${updates.firstName || user.firstName} ${updates.lastName || user.lastName}`.trim(),
       };
       setUser(updatedUser);
+      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
     }
   };
 
@@ -180,14 +205,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isAuthenticated: !!user,
         permissions,
+        isLoading,
+        error,
         login,
         logout,
         updateUserProfile,
+        verifyCode,
       }}
     >
       {children}
     </AuthContext.Provider>
   );
+}
+
+function getRoleLabel(role: UserRole): string {
+  const labels: Record<UserRole, string> = {
+    student: "Ученик",
+    teacher: "Учитель",
+    director: "Директор",
+    curator: "Куратор",
+    cook: "Повар",
+  };
+  return labels[role] || role;
 }
 
 export function useAuth() {

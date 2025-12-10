@@ -1,9 +1,7 @@
 import React, { useState } from "react";
-import { View, StyleSheet, TextInput, Pressable, Alert } from "react-native";
+import { View, StyleSheet, TextInput, Pressable, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -12,10 +10,7 @@ import { Button } from "@/components/Button";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
-import { AuthStackParamList } from "@/navigation/AuthStackNavigator";
 import { useAuth, UserRole } from "@/context/AuthContext";
-
-type InviteCodeScreenNavigationProp = NativeStackNavigationProp<AuthStackParamList, "InviteCode">;
 
 const ROLES: { key: UserRole; label: string; icon: string; color: string }[] = [
   { key: "student", label: "Ученик", icon: "user", color: Colors.light.secondary },
@@ -28,20 +23,25 @@ const ROLES: { key: UserRole; label: string; icon: string; color: string }[] = [
 export default function InviteCodeScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
-  const navigation = useNavigation<InviteCodeScreenNavigationProp>();
   const { theme } = useTheme();
-  const { login } = useAuth();
+  const { login, isLoading, error } = useAuth();
 
   const [inviteCode, setInviteCode] = useState("");
   const [selectedRole, setSelectedRole] = useState<UserRole>("student");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!inviteCode.trim()) {
-      Alert.alert("Ошибка", "Введите инвайт-код");
+      setLocalError("Введите инвайт-код");
       return;
     }
-    login(inviteCode.toUpperCase(), selectedRole);
+    setLocalError(null);
+    await login(inviteCode.toUpperCase(), selectedRole, firstName || undefined, lastName || undefined);
   };
+
+  const displayError = localError || error;
 
   return (
     <ThemedView style={styles.container}>
@@ -59,7 +59,7 @@ export default function InviteCodeScreen() {
             Добро пожаловать!
           </ThemedText>
           <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Введите инвайт-код вашего класса и выберите роль
+            Введите инвайт-код и выберите роль
           </ThemedText>
         </View>
 
@@ -73,16 +73,60 @@ export default function InviteCodeScreen() {
               {
                 backgroundColor: theme.backgroundDefault,
                 color: theme.text,
-                borderColor: theme.border,
+                borderColor: displayError ? Colors.light.error : theme.border,
               },
             ]}
-            placeholder="Например: 9A-X7B3"
+            placeholder="Например: CLASS9-ELNS5"
             placeholderTextColor={theme.textSecondary}
             value={inviteCode}
-            onChangeText={setInviteCode}
+            onChangeText={(text) => {
+              setInviteCode(text);
+              setLocalError(null);
+            }}
             autoCapitalize="characters"
             autoCorrect={false}
           />
+        </View>
+
+        <View style={styles.nameContainer}>
+          <View style={styles.nameField}>
+            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
+              Имя (необязательно)
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundDefault,
+                  color: theme.text,
+                  borderColor: theme.border,
+                },
+              ]}
+              placeholder="Ваше имя"
+              placeholderTextColor={theme.textSecondary}
+              value={firstName}
+              onChangeText={setFirstName}
+            />
+          </View>
+          <View style={styles.nameField}>
+            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
+              Фамилия (необязательно)
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundDefault,
+                  color: theme.text,
+                  borderColor: theme.border,
+                },
+              ]}
+              placeholder="Ваша фамилия"
+              placeholderTextColor={theme.textSecondary}
+              value={lastName}
+              onChangeText={setLastName}
+            />
+          </View>
         </View>
 
         <View style={styles.roleContainer}>
@@ -137,17 +181,37 @@ export default function InviteCodeScreen() {
           </View>
         </View>
 
+        {displayError ? (
+          <View style={[styles.errorContainer, { backgroundColor: Colors.light.error + "15" }]}>
+            <Feather name="alert-circle" size={16} color={Colors.light.error} />
+            <ThemedText type="small" style={{ color: Colors.light.error }}>
+              {displayError}
+            </ThemedText>
+          </View>
+        ) : null}
+
         <View style={styles.exampleContainer}>
-          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-            Примеры кодов для тестирования:
+          <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "center" }}>
+            Коды классов: CLASS1-KPMD2, CLASS9-ELNS5, CLASS11-HMWK7
           </ThemedText>
-          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-            9A-X7B3, TEACH-001, DIR-001, CUR-001, COOK-001
+          <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "center" }}>
+            Директор: DIRECTOR-2024-LUCH
+          </ThemedText>
+          <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "center" }}>
+            Учитель: TEACHER-MATH-001 | Повар: COOK-MENU-001
           </ThemedText>
         </View>
 
-        <Button onPress={handleSubmit} style={styles.submitButton}>
-          Войти
+        <Button 
+          onPress={handleSubmit} 
+          style={styles.submitButton}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            "Войти"
+          )}
         </Button>
       </KeyboardAwareScrollViewCompat>
     </ThemedView>
@@ -162,7 +226,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing["2xl"],
   },
   header: {
-    marginBottom: Spacing["3xl"],
+    marginBottom: Spacing["2xl"],
   },
   title: {
     marginBottom: Spacing.sm,
@@ -171,7 +235,15 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   inputContainer: {
-    marginBottom: Spacing["2xl"],
+    marginBottom: Spacing.lg,
+  },
+  nameContainer: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  nameField: {
+    flex: 1,
   },
   label: {
     marginBottom: Spacing.sm,
@@ -187,7 +259,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   roleContainer: {
-    marginBottom: Spacing["2xl"],
+    marginBottom: Spacing.lg,
   },
   rolesGrid: {
     flexDirection: "row",
@@ -212,14 +284,21 @@ const styles = StyleSheet.create({
   roleLabel: {
     fontWeight: "600",
   },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    marginBottom: Spacing.lg,
+  },
   exampleContainer: {
     padding: Spacing.lg,
     borderRadius: BorderRadius.sm,
-    marginBottom: Spacing["2xl"],
-    alignItems: "center",
+    marginBottom: Spacing.lg,
     gap: Spacing.xs,
   },
   submitButton: {
-    marginTop: Spacing.lg,
+    marginTop: Spacing.md,
   },
 });

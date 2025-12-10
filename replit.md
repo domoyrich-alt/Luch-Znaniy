@@ -29,9 +29,15 @@ Preferred communication style: Simple, everyday language.
 - **Storage**: Abstracted storage interface (`IStorage`) with in-memory implementation for development
 
 ### Authentication Flow
-- Invite code-based enrollment (format: "9A-X7B3", "10B-Y8C4", "TEACH-001", "DIR-001", "CUR-001", "COOK-001")
+- Invite code-based enrollment connected to PostgreSQL database
 - Five user roles: Student, Teacher, Director, Curator, Cook
-- Mock authentication currently implemented in `AuthContext`
+- Real API authentication via `/api/auth/login` endpoint
+- Valid invite codes seeded in database:
+  - Students: CLASS1-KPMD2 through CLASS11-HMWK7 (one per class)
+  - Director: DIRECTOR-2024-LUCH
+  - Teachers: TEACHER-MATH-001, TEACHER-PHYS-001, etc.
+  - Curators: CURATOR-CLASS9-001, CURATOR-CLASS10-001, etc.
+  - Cooks: COOK-MENU-001
 
 ### Role-Based Permissions
 - **Students**: Read-only access (view grades, schedule, events, cafeteria menu)
@@ -85,3 +91,27 @@ shared/           # Shared code (schema definitions)
 - **ESLint + Prettier**: Code quality and formatting
 - **esbuild**: Server bundling for production
 - **tsx**: TypeScript execution for development server
+
+## Recent Changes (December 2024)
+
+### API Integration Complete
+- **AuthContext**: Updated to use real API authentication with async login/logout
+- **AppContext**: Migrated from mock data to real API fetching for all data (grades, homework, events, news, cafeteria, schedule)
+- **InviteCodeScreen**: Enhanced with error handling, loading states, and optional name fields
+- **GradesScreen**: Now displays real grades from database with proper loading and empty states
+- **CafeteriaScreen**: Updated to use new menu format with prices and availability instead of ratings
+
+### Database Schema
+- All tables created: users, classes, grades, homework, events, news, schedule, cafeteria_menu, attendance, subjects
+- Sample data seeded: 57 subjects across 11 classes, 17 cafeteria menu items
+- Invite codes seeded for all roles and classes
+
+### API Endpoints
+- Authentication: `/api/auth/login`
+- Grades: `/api/grades/:studentId`
+- Homework: `/api/homework/:classId`
+- Events: `/api/events`
+- News: `/api/news`
+- Cafeteria: `/api/cafeteria` (CRUD operations)
+- Schedule: `/api/schedule/:classId`
+- Subjects: `/api/subjects/:classId`

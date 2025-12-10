@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, Pressable } from "react-native";
+import { View, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,13 +11,15 @@ import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Colors, GradeColors } from "@/constants/theme";
 import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 
 export default function GradesScreen() {
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { grades } = useApp();
+  const { grades, averageGrade, isLoading } = useApp();
+  const { user } = useAuth();
 
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
 
@@ -39,10 +41,51 @@ export default function GradesScreen() {
     return GradeColors.poor;
   };
 
-  const overallAverage =
-    grades.length > 0
-      ? (grades.reduce((acc, g) => acc + g.value, 0) / grades.length).toFixed(2)
-      : "0.00";
+  const overallAverage = averageGrade > 0 ? averageGrade.toFixed(2) : grades.length > 0
+    ? (grades.reduce((acc, g) => acc + g.value, 0) / grades.length).toFixed(2)
+    : "0.00";
+
+  if (user?.role !== "student") {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={[styles.emptyState, { paddingTop: headerHeight + Spacing.xl }]}>
+          <Feather name="book" size={64} color={theme.textSecondary} />
+          <ThemedText type="h4" style={{ color: theme.textSecondary, textAlign: "center" }}>
+            Раздел оценок доступен только для учеников
+          </ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={[styles.emptyState, { paddingTop: headerHeight + Spacing.xl }]}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <ThemedText type="body" style={{ color: theme.textSecondary, marginTop: Spacing.lg }}>
+            Загрузка оценок...
+          </ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (grades.length === 0) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={[styles.emptyState, { paddingTop: headerHeight + Spacing.xl }]}>
+          <Feather name="book-open" size={64} color={theme.textSecondary} />
+          <ThemedText type="h4" style={{ color: theme.textSecondary, textAlign: "center" }}>
+            Пока нет оценок
+          </ThemedText>
+          <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
+            Ваши оценки появятся здесь после выставления учителем
+          </ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -151,7 +194,7 @@ export default function GradesScreen() {
                 </Pressable>
 
                 {isExpanded ? (
-                  <View style={styles.gradesExpanded}>
+                  <View style={[styles.gradesExpanded, { borderTopColor: theme.border }]}>
                     {subjectGrades.map((grade) => (
                       <View key={grade.id} style={styles.gradeRow}>
                         <View
@@ -194,6 +237,13 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.lg,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing["2xl"],
+    gap: Spacing.lg,
   },
   summaryCard: {
     alignItems: "center",
@@ -251,7 +301,6 @@ const styles = StyleSheet.create({
   },
   gradesExpanded: {
     borderTopWidth: 1,
-    borderTopColor: Colors.light.border,
     padding: Spacing.lg,
     gap: Spacing.md,
   },
