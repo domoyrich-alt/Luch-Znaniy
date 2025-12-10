@@ -22,6 +22,7 @@ const ROLES: { key: UserRole; label: string; icon: string; color: string }[] = [
   { key: "teacher", label: "Учитель", icon: "book", color: Colors.light.success },
   { key: "director", label: "Директор", icon: "briefcase", color: Colors.light.warning },
   { key: "curator", label: "Куратор", icon: "shield", color: Colors.light.error },
+  { key: "cook", label: "Повар", icon: "coffee", color: "#8B5CF6" },
 ];
 
 export default function InviteCodeScreen() {
@@ -141,7 +142,7 @@ export default function InviteCodeScreen() {
             Примеры кодов для тестирования:
           </ThemedText>
           <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-            9A-X7B3, TEACH-001, DIR-001, CUR-001
+            9A-X7B3, TEACH-001, DIR-001, CUR-001, COOK-001
           </ThemedText>
         </View>
 

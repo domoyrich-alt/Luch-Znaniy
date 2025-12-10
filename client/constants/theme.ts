@@ -56,11 +56,12 @@ export const Colors = {
   },
 };
 
-export const RoleBadgeColors = {
+export const RoleBadgeColors: Record<string, string> = {
   student: "#3B82F6",
   teacher: "#10B981",
   director: "#F59E0B",
   curator: "#EF4444",
+  cook: "#8B5CF6",
 };
 
 export const GradeColors = {

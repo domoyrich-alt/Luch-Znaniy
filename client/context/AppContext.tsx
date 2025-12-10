@@ -59,10 +59,19 @@ interface AppContextType {
   homework: Homework[];
   menuItems: MenuItem[];
   rateMenuItem: (id: string, rating: number) => void;
+  addMenuItem: (item: Omit<MenuItem, "id" | "rating" | "ratingCount">) => void;
+  updateMenuItem: (id: string, item: Partial<MenuItem>) => void;
+  deleteMenuItem: (id: string) => void;
   events: Event[];
   toggleEventConfirmation: (id: string) => void;
+  addEvent: (event: Omit<Event, "id" | "confirmed" | "participantCount">) => void;
+  updateEvent: (id: string, event: Partial<Event>) => void;
+  deleteEvent: (id: string) => void;
   announcements: Announcement[];
   schedule: ScheduleItem[];
+  addScheduleItem: (item: Omit<ScheduleItem, "id">) => void;
+  updateScheduleItem: (id: string, item: Partial<ScheduleItem>) => void;
+  deleteScheduleItem: (id: string) => void;
   isEvenWeek: boolean;
   toggleWeekType: () => void;
 }
@@ -204,6 +213,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>(MOCK_MENU);
   const [events, setEvents] = useState<Event[]>(MOCK_EVENTS);
+  const [schedule, setSchedule] = useState<ScheduleItem[]>(MOCK_SCHEDULE);
   const [isEvenWeek, setIsEvenWeek] = useState(true);
 
   const today = new Date().toISOString().split("T")[0];
@@ -233,6 +243,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const addMenuItem = (item: Omit<MenuItem, "id" | "rating" | "ratingCount">) => {
+    const newItem: MenuItem = {
+      ...item,
+      id: Date.now().toString(),
+      rating: 0,
+      ratingCount: 0,
+    };
+    setMenuItems((prev) => [...prev, newItem]);
+  };
+
+  const updateMenuItem = (id: string, updates: Partial<MenuItem>) => {
+    setMenuItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
+  };
+
+  const deleteMenuItem = (id: string) => {
+    setMenuItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
   const toggleEventConfirmation = (id: string) => {
     setEvents((prev) =>
       prev.map((event) =>
@@ -249,6 +279,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const addEvent = (event: Omit<Event, "id" | "confirmed" | "participantCount">) => {
+    const newEvent: Event = {
+      ...event,
+      id: Date.now().toString(),
+      confirmed: false,
+      participantCount: 0,
+    };
+    setEvents((prev) => [...prev, newEvent]);
+  };
+
+  const updateEvent = (id: string, updates: Partial<Event>) => {
+    setEvents((prev) =>
+      prev.map((event) => (event.id === id ? { ...event, ...updates } : event))
+    );
+  };
+
+  const deleteEvent = (id: string) => {
+    setEvents((prev) => prev.filter((event) => event.id !== id));
+  };
+
+  const addScheduleItem = (item: Omit<ScheduleItem, "id">) => {
+    const newItem: ScheduleItem = {
+      ...item,
+      id: Date.now().toString(),
+    };
+    setSchedule((prev) => [...prev, newItem]);
+  };
+
+  const updateScheduleItem = (id: string, updates: Partial<ScheduleItem>) => {
+    setSchedule((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
+  };
+
+  const deleteScheduleItem = (id: string) => {
+    setSchedule((prev) => prev.filter((item) => item.id !== id));
+  };
+
   const toggleWeekType = () => {
     setIsEvenWeek((prev) => !prev);
   };
@@ -263,10 +331,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         homework: MOCK_HOMEWORK,
         menuItems,
         rateMenuItem,
+        addMenuItem,
+        updateMenuItem,
+        deleteMenuItem,
         events,
         toggleEventConfirmation,
+        addEvent,
+        updateEvent,
+        deleteEvent,
         announcements: MOCK_ANNOUNCEMENTS,
-        schedule: MOCK_SCHEDULE,
+        schedule,
+        addScheduleItem,
+        updateScheduleItem,
+        deleteScheduleItem,
         isEvenWeek,
         toggleWeekType,
       }}

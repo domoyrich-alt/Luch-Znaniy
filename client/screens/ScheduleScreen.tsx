@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, Pressable } from "react-native";
+import { View, StyleSheet, ScrollView, Pressable, Modal, TextInput, Alert } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,7 +8,10 @@ import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
-import { useApp } from "@/context/AppContext";
+import { useApp, ScheduleItem } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/Button";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
 const DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 const DAY_NAMES = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
@@ -18,14 +21,71 @@ export default function ScheduleScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
-  const { schedule, isEvenWeek, toggleWeekType } = useApp();
+  const { schedule, isEvenWeek, toggleWeekType, addScheduleItem, updateScheduleItem, deleteScheduleItem } = useApp();
+  const { permissions } = useAuth();
   const [selectedDay, setSelectedDay] = useState(0);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
+  const [formData, setFormData] = useState({
+    subject: "",
+    room: "",
+    teacher: "",
+    startTime: "",
+    endTime: "",
+  });
 
   const todaySchedule = schedule.filter((item) => {
     if (item.day !== selectedDay + 1) return false;
     if (item.isEvenWeek === null) return true;
     return item.isEvenWeek === isEvenWeek;
   });
+
+  const openAddModal = () => {
+    setEditingItem(null);
+    setFormData({ subject: "", room: "", teacher: "", startTime: "08:30", endTime: "09:15" });
+    setEditModalVisible(true);
+  };
+
+  const openEditModal = (item: ScheduleItem) => {
+    setEditingItem(item);
+    setFormData({
+      subject: item.subject,
+      room: item.room,
+      teacher: item.teacher,
+      startTime: item.startTime,
+      endTime: item.endTime,
+    });
+    setEditModalVisible(true);
+  };
+
+  const handleSave = () => {
+    if (!formData.subject || !formData.room || !formData.teacher) {
+      Alert.alert("Ошибка", "Заполните все поля");
+      return;
+    }
+    if (editingItem) {
+      updateScheduleItem(editingItem.id, formData);
+    } else {
+      addScheduleItem({
+        ...formData,
+        day: selectedDay + 1,
+        isEvenWeek: null,
+      });
+    }
+    setEditModalVisible(false);
+  };
+
+  const handleDelete = () => {
+    if (editingItem) {
+      Alert.alert("Удалить урок?", "Это действие нельзя отменить", [
+        { text: "Отмена", style: "cancel" },
+        { text: "Удалить", style: "destructive", onPress: () => {
+          deleteScheduleItem(editingItem.id);
+          setEditModalVisible(false);
+        }},
+      ]);
+    }
+  };
 
   const yellowBg = isDark ? Colors.dark.yellowLight : Colors.light.yellowLight;
   const yellowMedium = isDark ? Colors.dark.yellowMedium : Colors.light.yellowMedium;
@@ -87,9 +147,16 @@ export default function ScheduleScreen() {
           ))}
         </ScrollView>
 
-        <ThemedText type="h4" style={styles.dayTitle}>
-          {DAY_NAMES[selectedDay]}
-        </ThemedText>
+        <View style={styles.dayHeader}>
+          <ThemedText type="h4" style={styles.dayTitle}>
+            {DAY_NAMES[selectedDay]}
+          </ThemedText>
+          {permissions.canEditSchedule ? (
+            <Pressable onPress={openAddModal} style={[styles.addButton, { backgroundColor: yellowAccent }]}>
+              <Feather name="plus" size={20} color="#000000" />
+            </Pressable>
+          ) : null}
+        </View>
 
         {todaySchedule.length === 0 ? (
           <View style={[styles.emptyState, { backgroundColor: yellowMedium }]}>
@@ -103,8 +170,9 @@ export default function ScheduleScreen() {
             {todaySchedule
               .sort((a, b) => a.startTime.localeCompare(b.startTime))
               .map((lesson, index) => (
-                <View
+                <Pressable
                   key={lesson.id}
+                  onPress={() => permissions.canEditSchedule ? openEditModal(lesson) : null}
                   style={[
                     styles.lessonCard,
                     {
@@ -146,11 +214,89 @@ export default function ScheduleScreen() {
                       {index + 1}
                     </ThemedText>
                   </View>
-                </View>
+                  {permissions.canEditSchedule ? (
+                    <Feather name="edit-2" size={16} color={theme.textSecondary} style={{ marginLeft: Spacing.sm }} />
+                  ) : null}
+                </Pressable>
               ))}
           </View>
         )}
       </ScrollView>
+
+      <Modal visible={editModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.backgroundRoot }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText type="h4">{editingItem ? "Редактировать урок" : "Добавить урок"}</ThemedText>
+              <Pressable onPress={() => setEditModalVisible(false)}>
+                <Feather name="x" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+            <KeyboardAwareScrollViewCompat contentContainerStyle={styles.modalForm}>
+              <View style={styles.formGroup}>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Предмет</ThemedText>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                  value={formData.subject}
+                  onChangeText={(text) => setFormData((prev) => ({ ...prev, subject: text }))}
+                  placeholder="Математика"
+                  placeholderTextColor={theme.textSecondary}
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Кабинет</ThemedText>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                  value={formData.room}
+                  onChangeText={(text) => setFormData((prev) => ({ ...prev, room: text }))}
+                  placeholder="201"
+                  placeholderTextColor={theme.textSecondary}
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Учитель</ThemedText>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                  value={formData.teacher}
+                  onChangeText={(text) => setFormData((prev) => ({ ...prev, teacher: text }))}
+                  placeholder="Иванова А.П."
+                  placeholderTextColor={theme.textSecondary}
+                />
+              </View>
+              <View style={styles.formRow}>
+                <View style={[styles.formGroup, { flex: 1 }]}>
+                  <ThemedText type="caption" style={{ color: theme.textSecondary }}>Начало</ThemedText>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                    value={formData.startTime}
+                    onChangeText={(text) => setFormData((prev) => ({ ...prev, startTime: text }))}
+                    placeholder="08:30"
+                    placeholderTextColor={theme.textSecondary}
+                  />
+                </View>
+                <View style={[styles.formGroup, { flex: 1 }]}>
+                  <ThemedText type="caption" style={{ color: theme.textSecondary }}>Конец</ThemedText>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                    value={formData.endTime}
+                    onChangeText={(text) => setFormData((prev) => ({ ...prev, endTime: text }))}
+                    placeholder="09:15"
+                    placeholderTextColor={theme.textSecondary}
+                  />
+                </View>
+              </View>
+              <Button onPress={handleSave} style={{ marginTop: Spacing.lg }}>
+                {editingItem ? "Сохранить" : "Добавить"}
+              </Button>
+              {editingItem ? (
+                <Button onPress={handleDelete} style={{ marginTop: Spacing.md, backgroundColor: theme.error }}>
+                  Удалить урок
+                </Button>
+              ) : null}
+            </KeyboardAwareScrollViewCompat>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -249,5 +395,52 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.yellowLight,
     alignItems: "center",
     justifyContent: "center",
+  },
+  dayHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.lg,
+  },
+  addButton: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    padding: Spacing.xl,
+    maxHeight: "80%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.xl,
+  },
+  modalForm: {
+    gap: Spacing.md,
+  },
+  formGroup: {
+    gap: Spacing.xs,
+  },
+  formRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+  },
+  input: {
+    height: Spacing.inputHeight,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.lg,
+    fontSize: 16,
+    borderWidth: 1,
   },
 });

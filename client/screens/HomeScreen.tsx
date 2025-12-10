@@ -38,13 +38,14 @@ export default function HomeScreen() {
 
   const getRoleLabel = () => {
     if (!user) return "";
-    const labels = {
+    const labels: Record<string, string> = {
       student: "Ученик",
       teacher: "Учитель",
       director: "Директор",
       curator: "Куратор",
+      cook: "Повар",
     };
-    return labels[user.role];
+    return labels[user.role] || user.role;
   };
 
   return (

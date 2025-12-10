@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
 
-export type UserRole = "student" | "teacher" | "director" | "curator";
+export type UserRole = "student" | "teacher" | "director" | "curator" | "cook";
 
 export interface User {
   id: string;
@@ -12,9 +12,74 @@ export interface User {
   avatarUrl?: string;
 }
 
+export interface Permissions {
+  canEditSchedule: boolean;
+  canEditClassComposition: boolean;
+  canEditCafeteriaMenu: boolean;
+  canManageEvents: boolean;
+  canManageAnnouncements: boolean;
+  canManageHomework: boolean;
+  canViewGrades: boolean;
+  canEditGrades: boolean;
+}
+
+function getRolePermissions(role: UserRole): Permissions {
+  const basePermissions: Permissions = {
+    canEditSchedule: false,
+    canEditClassComposition: false,
+    canEditCafeteriaMenu: false,
+    canManageEvents: false,
+    canManageAnnouncements: false,
+    canManageHomework: false,
+    canViewGrades: true,
+    canEditGrades: false,
+  };
+
+  switch (role) {
+    case "student":
+      return basePermissions;
+    case "teacher":
+      return {
+        ...basePermissions,
+        canEditSchedule: true,
+        canEditClassComposition: true,
+        canManageHomework: true,
+        canEditGrades: true,
+      };
+    case "curator":
+      return {
+        ...basePermissions,
+        canEditSchedule: true,
+        canEditClassComposition: true,
+        canManageEvents: true,
+        canManageAnnouncements: true,
+        canManageHomework: true,
+        canEditGrades: true,
+      };
+    case "director":
+      return {
+        ...basePermissions,
+        canEditSchedule: true,
+        canEditClassComposition: true,
+        canManageEvents: true,
+        canManageAnnouncements: true,
+        canManageHomework: true,
+        canEditGrades: true,
+      };
+    case "cook":
+      return {
+        ...basePermissions,
+        canEditCafeteriaMenu: true,
+      };
+    default:
+      return basePermissions;
+  }
+}
+
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  permissions: Permissions;
   login: (inviteCode: string, role: UserRole) => void;
   logout: () => void;
 }
@@ -54,7 +119,17 @@ const MOCK_USERS: Record<string, User> = {
     classId: "ALL",
     className: "Куратор",
   },
+  "COOK-001": {
+    id: "5",
+    name: "Наталья Повар",
+    email: "cook@school.edu",
+    role: "cook",
+    classId: "KITCHEN",
+    className: "Столовая",
+  },
 };
+
+const defaultPermissions = getRolePermissions("student");
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -79,11 +154,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const permissions = user ? getRolePermissions(user.role) : defaultPermissions;
+
   return (
     <AuthContext.Provider
       value={{
         user,
         isAuthenticated: !!user,
+        permissions,
         login,
         logout,
       }}
