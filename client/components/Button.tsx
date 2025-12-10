@@ -1,5 +1,5 @@
 import React, { ReactNode } from "react";
-import { StyleSheet, Pressable, ViewStyle, StyleProp } from "react-native";
+import { StyleSheet, Pressable, ViewStyle, StyleProp, TextStyle } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -15,6 +15,7 @@ interface ButtonProps {
   onPress?: () => void;
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
   disabled?: boolean;
 }
 
@@ -32,6 +33,7 @@ export function Button({
   onPress,
   children,
   style,
+  textStyle,
   disabled = false,
 }: ButtonProps) {
   const { theme } = useTheme();
@@ -71,7 +73,7 @@ export function Button({
     >
       <ThemedText
         type="body"
-        style={[styles.buttonText, { color: theme.buttonText }]}
+        style={[styles.buttonText, { color: theme.buttonText }, textStyle]}
       >
         {children}
       </ThemedText>
