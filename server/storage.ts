@@ -77,7 +77,10 @@ export interface IStorage {
   deleteCafeteriaMenuItem(id: number): Promise<void>;
   
   getAttendanceByStudent(studentId: number): Promise<Attendance[]>;
+  getAttendanceByStudentAndDate(studentId: number, date: string): Promise<Attendance | undefined>;
   createAttendance(attendance: InsertAttendance): Promise<Attendance>;
+  
+  getStudentsByClass(classId: number): Promise<User[]>;
   
   getChatMessages(homeworkId: number): Promise<ChatMessage[]>;
   createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
@@ -337,9 +340,20 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(attendance).where(eq(attendance.studentId, studentId)).orderBy(attendance.date);
   }
 
+  async getAttendanceByStudentAndDate(studentId: number, date: string): Promise<Attendance | undefined> {
+    const [result] = await db.select().from(attendance).where(
+      and(eq(attendance.studentId, studentId), eq(attendance.date, date))
+    );
+    return result;
+  }
+
   async createAttendance(att: InsertAttendance): Promise<Attendance> {
     const [newAttendance] = await db.insert(attendance).values(att).returning();
     return newAttendance;
+  }
+
+  async getStudentsByClass(classId: number): Promise<User[]> {
+    return db.select().from(users).where(and(eq(users.classId, classId), eq(users.role, "student")));
   }
 
   async getChatMessages(homeworkId: number): Promise<ChatMessage[]> {

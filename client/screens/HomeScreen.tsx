@@ -20,16 +20,16 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { grades, homework, todayAttendance, announcements, events } = useApp();
+  const { grades, averageGrade, homework, todayAttendance, announcements, events } = useApp();
   const navigation = useNavigation<any>();
 
-  const averageGrade =
-    grades.length > 0
+  const displayAverage = averageGrade > 0 ? averageGrade.toFixed(1) : 
+    (grades.length > 0 
       ? (grades.reduce((acc, g) => acc + g.value, 0) / grades.length).toFixed(1)
-      : "0.0";
+      : "---");
 
   const pendingHomework = homework.filter((h) => h.status === "pending").length;
-  const upcomingEvents = events.filter((e) => !e.confirmed).length;
+  const upcomingEvents = events.length;
 
   const getRoleBadgeColor = () => {
     if (!user) return Colors.light.primary;
@@ -78,9 +78,11 @@ export default function HomeScreen() {
                     {getRoleLabel()}
                   </ThemedText>
                 </View>
-                <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                  {user?.className}
-                </ThemedText>
+                {user?.className ? (
+                  <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                    {user.className}
+                  </ThemedText>
+                ) : null}
               </View>
             </View>
           </View>
@@ -94,7 +96,7 @@ export default function HomeScreen() {
             <StatCard
               icon="bar-chart-2"
               label="Средний балл"
-              value={averageGrade}
+              value={displayAverage}
               color={theme.primary}
               onPress={() => navigation.navigate("GradesTab")}
             />
@@ -118,7 +120,7 @@ export default function HomeScreen() {
               icon="star"
               label="События"
               value={`${upcomingEvents}`}
-              subtext="новых"
+              subtext="активных"
               color={theme.secondary}
               onPress={() => navigation.navigate("EventsModal")}
             />
@@ -132,21 +134,29 @@ export default function HomeScreen() {
               <ThemedText type="link">Все</ThemedText>
             </Pressable>
           </View>
-          {announcements.slice(0, 2).map((announcement) => (
-            <Card key={announcement.id} style={styles.announcementCard}>
-              <View style={styles.announcementHeader}>
-                <ThemedText type="body" style={styles.announcementTitle}>
-                  {announcement.title}
+          {announcements.length > 0 ? (
+            announcements.slice(0, 2).map((announcement) => (
+              <Card key={announcement.id} style={styles.announcementCard}>
+                <View style={styles.announcementHeader}>
+                  <ThemedText type="body" style={styles.announcementTitle}>
+                    {announcement.title}
+                  </ThemedText>
+                  <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    {announcement.date}
+                  </ThemedText>
+                </View>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                  {announcement.content}
                 </ThemedText>
-                <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-                  {announcement.date}
-                </ThemedText>
-              </View>
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                {announcement.content}
+              </Card>
+            ))
+          ) : (
+            <Card style={styles.announcementCard}>
+              <ThemedText type="body" style={{ color: theme.textSecondary }}>
+                Нет новых новостей
               </ThemedText>
             </Card>
-          ))}
+          )}
         </View>
 
         <View style={styles.quickActionsSection}>

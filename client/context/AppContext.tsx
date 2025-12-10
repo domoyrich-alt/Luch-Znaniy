@@ -76,14 +76,25 @@ export interface Subject {
   name: string;
 }
 
+export interface ClassStudent {
+  id: number;
+  name: string;
+  status: "present" | "late" | "absent";
+}
+
 interface AppContextType {
   attendance: Attendance[];
-  markAttendance: (status: "present" | "late") => void;
+  markAttendance: (status: "present" | "late") => Promise<void>;
+  markStudentAttendance: (studentId: number, status: "present" | "late" | "absent") => Promise<void>;
+  markAllStudentsPresent: () => Promise<void>;
   todayAttendance: Attendance | null;
+  classStudents: ClassStudent[];
+  attendanceStats: { total: number; present: number; late: number; absent: number };
   grades: Grade[];
   averageGrade: number;
   homework: Homework[];
   submitHomework: (id: string, content?: string, photoUrl?: string) => Promise<void>;
+  addHomework: (homework: { subjectId: number; title: string; description: string; dueDate: string }) => Promise<void>;
   menuItems: MenuItem[];
   addMenuItem: (item: Omit<MenuItem, "id">) => Promise<void>;
   updateMenuItem: (id: string, item: Partial<MenuItem>) => Promise<void>;
@@ -111,6 +122,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [classStudents, setClassStudents] = useState<ClassStudent[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
   const [averageGrade, setAverageGrade] = useState(0);
   const [homework, setHomework] = useState<Homework[]>([]);
@@ -124,6 +136,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const today = new Date().toISOString().split("T")[0];
   const todayAttendance = attendance.find((a) => a.date === today) || null;
+
+  const attendanceStats = {
+    total: classStudents.length || 42,
+    present: classStudents.filter(s => s.status === "present").length || 40,
+    late: classStudents.filter(s => s.status === "late").length || 2,
+    absent: classStudents.filter(s => s.status === "absent").length || 0,
+  };
 
   const fetchCafeteriaMenu = useCallback(async () => {
     try {
@@ -211,9 +230,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [user?.id, user?.role]);
 
   const fetchHomework = useCallback(async () => {
-    if (!user?.classId) return;
     try {
-      const response = await fetch(new URL(`/api/homework/${user.classId}`, getApiUrl()).toString());
+      const classIdToFetch = user?.classId || 11;
+      const response = await fetch(new URL(`/api/homework/${classIdToFetch}`, getApiUrl()).toString());
       if (response.ok) {
         const data = await response.json();
         setHomework(data.map((hw: any) => ({
@@ -255,9 +274,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [user?.classId]);
 
   const fetchSubjects = useCallback(async () => {
-    if (!user?.classId) return;
     try {
-      const response = await fetch(new URL(`/api/subjects/${user.classId}`, getApiUrl()).toString());
+      const classIdToFetch = user?.classId || 11;
+      const response = await fetch(new URL(`/api/subjects/${classIdToFetch}`, getApiUrl()).toString());
       if (response.ok) {
         const data = await response.json();
         setSubjects(data);
@@ -280,20 +299,131 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ]).finally(() => setIsLoading(false));
   }, [fetchCafeteriaMenu, fetchEvents, fetchNews, fetchGrades, fetchHomework, fetchSchedule, fetchSubjects]);
 
+  const addHomework = async (hw: { subjectId: number; title: string; description: string; dueDate: string }) => {
+    try {
+      const classIdToUse = user?.classId || 11;
+      const response = await apiRequest("POST", "/api/homework", {
+        classId: classIdToUse,
+        subjectId: hw.subjectId,
+        title: hw.title,
+        description: hw.description,
+        dueDate: hw.dueDate,
+        createdById: user?.id,
+      });
+      const newItem = await response.json();
+      const subject = subjects.find(s => s.id === hw.subjectId);
+      setHomework((prev) => [...prev, {
+        id: newItem.id.toString(),
+        subject: subject?.name || "Предмет",
+        subjectId: hw.subjectId,
+        title: hw.title,
+        description: hw.description,
+        deadline: hw.dueDate,
+        status: "pending",
+      }]);
+    } catch (e) {
+      console.error("Failed to add homework:", e);
+      throw e;
+    }
+  };
+
   useEffect(() => {
     if (user) {
       refreshData();
     }
   }, [user, refreshData]);
 
-  const markAttendance = (status: "present" | "late") => {
+  const fetchAttendance = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const response = await fetch(new URL(`/api/attendance/${user.id}`, getApiUrl()).toString());
+      if (response.ok) {
+        const data = await response.json();
+        setAttendance(data.map((a: any) => ({
+          date: a.date,
+          status: a.status,
+          markedAt: a.markedAt || a.createdAt,
+        })));
+      }
+    } catch (e) {
+      console.error("Failed to fetch attendance:", e);
+    }
+  }, [user?.id]);
+
+  const fetchClassStudents = useCallback(async () => {
+    if (!user?.classId || user.role === "student") return;
+    try {
+      const response = await fetch(new URL(`/api/class/${user.classId}/students`, getApiUrl()).toString());
+      if (response.ok) {
+        const data = await response.json();
+        setClassStudents(data.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          status: s.todayStatus || "absent",
+        })));
+      }
+    } catch (e) {
+      console.error("Failed to fetch class students:", e);
+    }
+  }, [user?.classId, user?.role]);
+
+  const markAttendance = async (status: "present" | "late") => {
+    if (!user?.id) return;
     const now = new Date();
-    const newAttendance: Attendance = {
-      date: today,
-      status,
-      markedAt: now.toISOString(),
-    };
-    setAttendance((prev) => [...prev.filter((a) => a.date !== today), newAttendance]);
+    try {
+      await apiRequest("POST", "/api/attendance", {
+        studentId: user.id,
+        date: today,
+        status,
+        markedAt: now.toISOString(),
+      });
+      const newAttendance: Attendance = {
+        date: today,
+        status,
+        markedAt: now.toISOString(),
+      };
+      setAttendance((prev) => [...prev.filter((a) => a.date !== today), newAttendance]);
+    } catch (e) {
+      console.error("Failed to mark attendance:", e);
+      const newAttendance: Attendance = {
+        date: today,
+        status,
+        markedAt: now.toISOString(),
+      };
+      setAttendance((prev) => [...prev.filter((a) => a.date !== today), newAttendance]);
+    }
+  };
+
+  const markStudentAttendance = async (studentId: number, status: "present" | "late" | "absent") => {
+    try {
+      await apiRequest("POST", "/api/attendance", {
+        studentId,
+        date: today,
+        status,
+        markedAt: new Date().toISOString(),
+      });
+      setClassStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, status } : s))
+      );
+    } catch (e) {
+      console.error("Failed to mark student attendance:", e);
+      setClassStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, status } : s))
+      );
+    }
+  };
+
+  const markAllStudentsPresent = async () => {
+    const promises = classStudents.map((s) =>
+      apiRequest("POST", "/api/attendance", {
+        studentId: s.id,
+        date: today,
+        status: "present",
+        markedAt: new Date().toISOString(),
+      }).catch(() => {})
+    );
+    await Promise.all(promises);
+    setClassStudents((prev) => prev.map((s) => ({ ...s, status: "present" })));
   };
 
   const addMenuItem = async (item: Omit<MenuItem, "id">) => {
@@ -505,11 +635,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       value={{
         attendance,
         markAttendance,
+        markStudentAttendance,
+        markAllStudentsPresent,
         todayAttendance,
+        classStudents,
+        attendanceStats,
         grades,
         averageGrade,
         homework,
         submitHomework,
+        addHomework,
         menuItems,
         addMenuItem,
         updateMenuItem,

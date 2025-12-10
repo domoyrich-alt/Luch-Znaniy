@@ -99,7 +99,13 @@ shared/           # Shared code (schema definitions)
 - **AppContext**: Migrated from mock data to real API fetching for all data (grades, homework, events, news, cafeteria, schedule)
 - **InviteCodeScreen**: Enhanced with error handling, loading states, and optional name fields
 - **GradesScreen**: Now displays real grades from database with proper loading and empty states
-- **CafeteriaScreen**: Updated to use new menu format with prices and availability instead of ratings
+- **CafeteriaScreen**: Updated to use new menu format with availability toggle (no prices displayed)
+
+### Homework Management (December 10, 2024)
+- **HomeworkModal**: Teachers, curators, and directors can now create homework assignments
+- Add homework UI with subject selection, title, description, and due date fields
+- Fixed subject/homework loading for non-student users (defaults to class 11)
+- Error handling with user-friendly alerts
 
 ### Database Schema
 - All tables created: users, classes, grades, homework, events, news, schedule, cafeteria_menu, attendance, subjects
@@ -109,7 +115,7 @@ shared/           # Shared code (schema definitions)
 ### API Endpoints
 - Authentication: `/api/auth/login`
 - Grades: `/api/grades/:studentId`
-- Homework: `/api/homework/:classId`
+- Homework: `/api/homework/:classId` (GET), `/api/homework` (POST)
 - Events: `/api/events`
 - News: `/api/news`
 - Cafeteria: `/api/cafeteria` (CRUD operations)

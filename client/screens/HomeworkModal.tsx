@@ -4,6 +4,7 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -13,6 +14,7 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
 import { useApp, Homework } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 
 interface ChatMessage {
   id: string;
@@ -36,13 +38,50 @@ export default function HomeworkModal() {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { homework, submitHomework } = useApp();
+  const { homework, submitHomework, addHomework, subjects } = useApp();
+  const { permissions } = useAuth();
   
   const [chatModalVisible, setChatModalVisible] = useState(false);
   const [selectedHomework, setSelectedHomework] = useState<Homework | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState("");
   const [attachedImages, setAttachedImages] = useState<string[]>([]);
+  
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [newHomework, setNewHomework] = useState({
+    title: "",
+    description: "",
+    subjectId: 0,
+    dueDate: "",
+  });
+  
+  const canManage = permissions.canManageHomework;
+
+  const openAddModal = () => {
+    setNewHomework({ title: "", description: "", subjectId: subjects[0]?.id || 0, dueDate: "" });
+    setAddModalVisible(true);
+  };
+
+  const handleAddHomework = async () => {
+    if (!newHomework.title || !newHomework.subjectId) {
+      Alert.alert("Ошибка", "Заполните название и выберите предмет");
+      return;
+    }
+    try {
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+      await addHomework({
+        title: newHomework.title,
+        description: newHomework.description,
+        subjectId: newHomework.subjectId,
+        dueDate: newHomework.dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      });
+      setAddModalVisible(false);
+    } catch (error) {
+      Alert.alert("Ошибка", "Не удалось добавить домашнее задание. Попробуйте еще раз.");
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -164,6 +203,15 @@ export default function HomeworkModal() {
         scrollIndicatorInsets={{ bottom: insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
+        {canManage ? (
+          <View style={styles.headerRow}>
+            <ThemedText type="h4">Домашние задания</ThemedText>
+            <Pressable onPress={openAddModal} style={[styles.addButton, { backgroundColor: theme.primary }]}>
+              <Feather name="plus" size={20} color="#FFFFFF" />
+            </Pressable>
+          </View>
+        ) : null}
+        
         <View style={styles.homeworkList}>
           {homework.map((item) => (
             <Card key={item.id} style={styles.homeworkCard}>
@@ -351,6 +399,81 @@ export default function HomeworkModal() {
           </KeyboardAwareScrollViewCompat>
         </ThemedView>
       </Modal>
+
+      <Modal visible={addModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.backgroundRoot }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText type="h4">Добавить домашнее задание</ThemedText>
+              <Pressable onPress={() => setAddModalVisible(false)}>
+                <Feather name="x" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+            <KeyboardAwareScrollViewCompat contentContainerStyle={styles.modalForm}>
+              <View style={styles.formGroup}>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Предмет</ThemedText>
+                <View style={styles.subjectButtons}>
+                  {subjects.slice(0, 8).map((subject) => (
+                    <Pressable
+                      key={subject.id}
+                      onPress={() => setNewHomework((prev) => ({ ...prev, subjectId: subject.id }))}
+                      style={[
+                        styles.subjectButton,
+                        {
+                          backgroundColor: newHomework.subjectId === subject.id ? theme.primary : theme.backgroundDefault,
+                          borderColor: newHomework.subjectId === subject.id ? theme.primary : theme.border,
+                        },
+                      ]}
+                    >
+                      <ThemedText
+                        type="caption"
+                        style={{ color: newHomework.subjectId === subject.id ? "#FFFFFF" : theme.text }}
+                      >
+                        {subject.name}
+                      </ThemedText>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+              <View style={styles.formGroup}>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Название задания</ThemedText>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                  value={newHomework.title}
+                  onChangeText={(text) => setNewHomework((prev) => ({ ...prev, title: text }))}
+                  placeholder="Упражнение 42"
+                  placeholderTextColor={theme.textSecondary}
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Описание</ThemedText>
+                <TextInput
+                  style={[styles.input, styles.multilineInput, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                  value={newHomework.description}
+                  onChangeText={(text) => setNewHomework((prev) => ({ ...prev, description: text }))}
+                  placeholder="Решить все задачи..."
+                  placeholderTextColor={theme.textSecondary}
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Срок сдачи (ГГГГ-ММ-ДД)</ThemedText>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                  value={newHomework.dueDate}
+                  onChangeText={(text) => setNewHomework((prev) => ({ ...prev, dueDate: text }))}
+                  placeholder="2024-12-20"
+                  placeholderTextColor={theme.textSecondary}
+                />
+              </View>
+              <Button onPress={handleAddHomework} style={{ marginTop: Spacing.lg }}>
+                Добавить
+              </Button>
+            </KeyboardAwareScrollViewCompat>
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -523,5 +646,65 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     alignItems: "center",
     justifyContent: "center",
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.xl,
+  },
+  addButton: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    padding: Spacing.xl,
+    maxHeight: "85%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.xl,
+  },
+  modalForm: {
+    gap: Spacing.md,
+    paddingBottom: Spacing.xl,
+  },
+  formGroup: {
+    gap: Spacing.xs,
+  },
+  input: {
+    height: Spacing.inputHeight,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.lg,
+    fontSize: 16,
+    borderWidth: 1,
+  },
+  multilineInput: {
+    height: 80,
+    paddingTop: Spacing.md,
+    textAlignVertical: "top",
+  },
+  subjectButtons: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+  },
+  subjectButton: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
   },
 });

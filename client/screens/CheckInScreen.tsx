@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, ScrollView, Pressable, Alert } from "react-native";
+import { View, StyleSheet, ScrollView, Pressable, Alert, ActivityIndicator } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,7 +10,6 @@ import Animated, {
   useSharedValue,
   withSpring,
   withSequence,
-  withTiming,
 } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -31,11 +30,11 @@ export default function CheckInScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { todayAttendance, markAttendance } = useApp();
+  const { todayAttendance, markAttendance, classStudents, markStudentAttendance, markAllStudentsPresent, attendanceStats } = useApp();
 
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const scale = useSharedValue(1);
-  const opacity = useSharedValue(1);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -50,18 +49,19 @@ export default function CheckInScreen() {
 
   const handleCheckIn = async () => {
     const isLate = isAfterCutoff();
+    setIsSubmitting(true);
     scale.value = withSequence(
       withSpring(0.95),
       withSpring(1.05),
       withSpring(1)
     );
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    markAttendance(isLate ? "late" : "present");
+    await markAttendance(isLate ? "late" : "present");
+    setIsSubmitting(false);
   };
 
   const animatedButtonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
-    opacity: opacity.value,
   }));
 
   const formatTime = (date: Date) => {
@@ -75,7 +75,14 @@ export default function CheckInScreen() {
   const isTeacherOrHigher = user?.role === "teacher" || user?.role === "director" || user?.role === "curator";
 
   if (isTeacherOrHigher) {
-    return <TeacherCheckInView />;
+    return (
+      <TeacherCheckInView
+        classStudents={classStudents}
+        markStudentAttendance={markStudentAttendance}
+        markAllStudentsPresent={markAllStudentsPresent}
+        attendanceStats={attendanceStats}
+      />
+    );
   }
 
   return (
@@ -143,18 +150,22 @@ export default function CheckInScreen() {
             <Animated.View style={animatedButtonStyle}>
               <Pressable
                 onPress={handleCheckIn}
-                disabled={isAfterCutoff() && !todayAttendance}
+                disabled={isSubmitting}
                 style={[
                   styles.checkInButton,
                   {
                     backgroundColor: isAfterCutoff()
                       ? Colors.light.warning
                       : Colors.light.success,
-                    opacity: isAfterCutoff() ? 0.8 : 1,
+                    opacity: isSubmitting ? 0.6 : 1,
                   },
                 ]}
               >
-                <Feather name="check" size={48} color="#FFFFFF" />
+                {isSubmitting ? (
+                  <ActivityIndicator color="#FFFFFF" size="large" />
+                ) : (
+                  <Feather name="check" size={48} color="#FFFFFF" />
+                )}
               </Pressable>
             </Animated.View>
             <ThemedText type="h4" style={styles.checkInLabel}>
@@ -184,9 +195,9 @@ export default function CheckInScreen() {
             Статистика посещаемости
           </ThemedText>
           <View style={styles.statsRow}>
-            <StatItem label="Всего дней" value="42" color={theme.primary} />
-            <StatItem label="Присутствий" value="40" color={Colors.light.success} />
-            <StatItem label="Опозданий" value="2" color={Colors.light.warning} />
+            <StatItem label="Всего дней" value={attendanceStats.total.toString()} color={theme.primary} />
+            <StatItem label="Присутствий" value={attendanceStats.present.toString()} color={Colors.light.success} />
+            <StatItem label="Опозданий" value={attendanceStats.late.toString()} color={Colors.light.warning} />
           </View>
         </View>
       </ScrollView>
@@ -194,42 +205,35 @@ export default function CheckInScreen() {
   );
 }
 
-function TeacherCheckInView() {
+function TeacherCheckInView({
+  classStudents,
+  markStudentAttendance,
+  markAllStudentsPresent,
+  attendanceStats,
+}: {
+  classStudents: { id: number; name: string; status: "present" | "late" | "absent" }[];
+  markStudentAttendance: (id: number, status: "present" | "late" | "absent") => Promise<void>;
+  markAllStudentsPresent: () => Promise<void>;
+  attendanceStats: { total: number; present: number; late: number; absent: number };
+}) {
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
 
-  const [students, setStudents] = useState([
-    { id: "1", name: "Иванов Алексей", status: "present" as const },
-    { id: "2", name: "Петрова Мария", status: "present" as const },
-    { id: "3", name: "Сидоров Дмитрий", status: "absent" as const },
-    { id: "4", name: "Козлова Анна", status: "present" as const },
-    { id: "5", name: "Новиков Павел", status: "late" as const },
-    { id: "6", name: "Федорова Елена", status: "present" as const },
-  ]);
-
-  const toggleStatus = (id: string) => {
-    setStudents((prev) =>
-      prev.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              status:
-                s.status === "present"
-                  ? "late"
-                  : s.status === "late"
-                  ? "absent"
-                  : "present",
-            }
-          : s
-      )
-    );
+  const toggleStatus = async (id: number, currentStatus: string) => {
+    const nextStatus = currentStatus === "present" ? "late" : currentStatus === "late" ? "absent" : "present";
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await markStudentAttendance(id, nextStatus as "present" | "late" | "absent");
   };
 
-  const markAllPresent = async () => {
+  const handleMarkAllPresent = async () => {
+    setIsLoading(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setStudents((prev) => prev.map((s) => ({ ...s, status: "present" })));
+    await markAllStudentsPresent();
+    setIsLoading(false);
   };
 
   const getStatusColor = (status: string) => {
@@ -258,6 +262,22 @@ function TeacherCheckInView() {
     }
   };
 
+  const students = classStudents.length > 0 ? classStudents : [
+    { id: 1, name: "Иванов Алексей", status: "present" as const },
+    { id: 2, name: "Петрова Мария", status: "present" as const },
+    { id: 3, name: "Сидоров Дмитрий", status: "absent" as const },
+    { id: 4, name: "Козлова Анна", status: "present" as const },
+    { id: 5, name: "Новиков Павел", status: "late" as const },
+    { id: 6, name: "Федорова Елена", status: "present" as const },
+  ];
+
+  const stats = classStudents.length > 0 ? attendanceStats : {
+    total: 6,
+    present: students.filter(s => s.status === "present").length,
+    late: students.filter(s => s.status === "late").length,
+    absent: students.filter(s => s.status === "absent").length,
+  };
+
   return (
     <ThemedView style={styles.container}>
       <ScrollView
@@ -272,17 +292,23 @@ function TeacherCheckInView() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.teacherHeader}>
-          <ThemedText type="h4">9А класс</ThemedText>
-          <Button onPress={markAllPresent} style={styles.markAllButton}>
-            Все присутствуют
+          <ThemedText type="h4">{user?.className || "Класс"}</ThemedText>
+          <Button onPress={handleMarkAllPresent} style={styles.markAllButton} disabled={isLoading}>
+            {isLoading ? "..." : "Все присутствуют"}
           </Button>
+        </View>
+
+        <View style={styles.statsRow}>
+          <StatItem label="Присутствует" value={stats.present.toString()} color={Colors.light.success} />
+          <StatItem label="Опоздало" value={stats.late.toString()} color={Colors.light.warning} />
+          <StatItem label="Отсутствует" value={stats.absent.toString()} color={Colors.light.error} />
         </View>
 
         <View style={styles.studentsList}>
           {students.map((student) => (
             <Pressable
               key={student.id}
-              onPress={() => toggleStatus(student.id)}
+              onPress={() => toggleStatus(student.id, student.status)}
               style={[styles.studentRow, { backgroundColor: theme.backgroundDefault }]}
             >
               <ThemedText type="body">{student.name}</ThemedText>
@@ -397,6 +423,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: "row",
     gap: Spacing.md,
+    marginBottom: Spacing.xl,
   },
   statItem: {
     flex: 1,

@@ -82,6 +82,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/class/:classId/students", async (req: Request, res: Response) => {
+    try {
+      const classId = parseInt(req.params.classId);
+      const students = await storage.getStudentsByClass(classId);
+      const today = new Date().toISOString().split("T")[0];
+      
+      const studentsWithAttendance = await Promise.all(
+        students.map(async (student: any) => {
+          const attendance = await storage.getAttendanceByStudentAndDate(student.id, today);
+          return {
+            id: student.id,
+            name: `${student.lastName || ''} ${student.firstName || ''}`.trim() || 'Ученик',
+            todayStatus: attendance?.status || "absent",
+          };
+        })
+      );
+      
+      res.json(studentsWithAttendance);
+    } catch (error) {
+      console.error("Get class students error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
   app.get("/api/subjects/:classId", async (req: Request, res: Response) => {
     try {
       const classId = parseInt(req.params.classId);

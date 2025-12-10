@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, Pressable, Modal, TextInput, Alert, ActivityIndicator } from "react-native";
+import { View, StyleSheet, ScrollView, Pressable, Modal, TextInput, Alert, ActivityIndicator, Switch } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,10 +17,15 @@ import { useApp, MenuItem } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: string }> = {
-  first: { label: "Первое блюдо", icon: "droplet" },
-  main: { label: "Второе блюдо", icon: "box" },
-  salad: { label: "Салат", icon: "feather" },
-  drink: { label: "Напиток", icon: "coffee" },
+  "Первые блюда": { label: "Первые блюда", icon: "droplet" },
+  "Вторые блюда": { label: "Вторые блюда", icon: "box" },
+  "Салаты": { label: "Салаты", icon: "feather" },
+  "Напитки": { label: "Напитки", icon: "coffee" },
+  "Выпечка": { label: "Выпечка", icon: "package" },
+  first: { label: "Первые блюда", icon: "droplet" },
+  main: { label: "Вторые блюда", icon: "box" },
+  salad: { label: "Салаты", icon: "feather" },
+  drink: { label: "Напитки", icon: "coffee" },
   garnish: { label: "Гарнир", icon: "layers" },
   dessert: { label: "Десерт", icon: "heart" },
   bakery: { label: "Выпечка", icon: "package" },
@@ -34,7 +39,7 @@ export default function CafeteriaScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { menuItems, addMenuItem, updateMenuItem, deleteMenuItem, isLoading } = useApp();
-  const { permissions } = useAuth();
+  const { permissions, user } = useAuth();
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
@@ -42,13 +47,14 @@ export default function CafeteriaScreen() {
     name: "", 
     category: "main" as MenuCategory,
     description: "",
-    price: "0",
     isAvailable: true 
   });
 
+  const canManage = permissions.canEditCafeteriaMenu;
+
   const openAddModal = () => {
     setEditingItem(null);
-    setFormData({ name: "", category: "main", description: "", price: "0", isAvailable: true });
+    setFormData({ name: "", category: "main", description: "", isAvailable: true });
     setEditModalVisible(true);
   };
 
@@ -58,7 +64,6 @@ export default function CafeteriaScreen() {
       name: item.name, 
       category: item.category as MenuCategory,
       description: item.description || "",
-      price: item.price.toString(),
       isAvailable: item.isAvailable 
     });
     setEditModalVisible(true);
@@ -75,7 +80,7 @@ export default function CafeteriaScreen() {
         name: formData.name,
         category: formData.category,
         description: formData.description,
-        price: parseFloat(formData.price) || 0,
+        price: editingItem.price,
         isAvailable: formData.isAvailable,
       });
     } else {
@@ -83,7 +88,7 @@ export default function CafeteriaScreen() {
         name: formData.name,
         category: formData.category,
         description: formData.description,
-        price: parseFloat(formData.price) || 0,
+        price: 0,
         isAvailable: formData.isAvailable,
       });
     }
@@ -103,13 +108,24 @@ export default function CafeteriaScreen() {
     }
   };
 
+  const toggleItemAvailability = async (item: MenuItem) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await updateMenuItem(item.id, {
+      ...item,
+      isAvailable: !item.isAvailable,
+    });
+  };
+
   const today = new Date().toLocaleDateString("ru-RU", {
     weekday: "long",
     day: "numeric",
     month: "long",
   });
 
-  const groupedItems = menuItems.reduce((acc, item) => {
+  const availableItems = menuItems.filter(item => item.isAvailable);
+  const unavailableItems = menuItems.filter(item => !item.isAvailable);
+
+  const groupedAvailable = availableItems.reduce((acc, item) => {
     const cat = item.category;
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(item);
@@ -137,7 +153,7 @@ export default function CafeteriaScreen() {
           <ThemedText type="h4" style={{ color: theme.textSecondary, textAlign: "center" }}>
             Меню пока пусто
           </ThemedText>
-          {permissions.canEditCafeteriaMenu ? (
+          {canManage ? (
             <Button onPress={openAddModal} style={{ marginTop: Spacing.lg }}>
               Добавить блюдо
             </Button>
@@ -167,65 +183,128 @@ export default function CafeteriaScreen() {
               {today}
             </ThemedText>
           </View>
-          {permissions.canEditCafeteriaMenu ? (
+          {canManage ? (
             <Pressable onPress={openAddModal} style={[styles.addButton, { backgroundColor: theme.primary }]}>
               <Feather name="plus" size={20} color="#FFFFFF" />
             </Pressable>
           ) : null}
         </View>
 
-        {Object.entries(groupedItems).map(([category, items]) => (
-          <View key={category} style={styles.categorySection}>
-            <ThemedText type="h4" style={styles.categoryTitle}>
-              {CATEGORY_LABELS[category]?.label || category}
+        {canManage ? (
+          <Card style={styles.manageHint}>
+            <Feather name="info" size={16} color={theme.primary} />
+            <ThemedText type="caption" style={{ color: theme.textSecondary, flex: 1 }}>
+              Используйте переключатели чтобы отметить блюда доступные сегодня
+            </ThemedText>
+          </Card>
+        ) : null}
+
+        {Object.entries(groupedAvailable).length > 0 ? (
+          <>
+            <ThemedText type="h4" style={styles.sectionLabel}>
+              Доступно сегодня
+            </ThemedText>
+            {Object.entries(groupedAvailable).map(([category, items]) => (
+              <View key={category} style={styles.categorySection}>
+                <ThemedText type="body" style={[styles.categoryTitle, { color: theme.textSecondary }]}>
+                  {CATEGORY_LABELS[category]?.label || category}
+                </ThemedText>
+                <View style={styles.menuList}>
+                  {items.map((item) => (
+                    <Card key={item.id} style={styles.menuCard}>
+                      <View style={styles.menuHeader}>
+                        <View
+                          style={[
+                            styles.categoryIcon,
+                            { backgroundColor: Colors.light.success + "20" },
+                          ]}
+                        >
+                          <Feather
+                            name={CATEGORY_LABELS[category]?.icon as any || "circle"}
+                            size={20}
+                            color={Colors.light.success}
+                          />
+                        </View>
+                        <View style={styles.menuInfo}>
+                          <ThemedText type="body" style={styles.dishName}>
+                            {item.name}
+                          </ThemedText>
+                          {item.description ? (
+                            <ThemedText type="caption" style={{ color: theme.textSecondary }} numberOfLines={2}>
+                              {item.description}
+                            </ThemedText>
+                          ) : null}
+                        </View>
+                        {canManage ? (
+                          <View style={styles.controls}>
+                            <Switch
+                              value={item.isAvailable}
+                              onValueChange={() => toggleItemAvailability(item)}
+                              trackColor={{ false: theme.border, true: Colors.light.success }}
+                            />
+                            <Pressable onPress={() => openEditModal(item)} style={styles.editButton}>
+                              <Feather name="edit-2" size={16} color={theme.textSecondary} />
+                            </Pressable>
+                          </View>
+                        ) : null}
+                      </View>
+                    </Card>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </>
+        ) : (
+          <View style={styles.noAvailable}>
+            <Feather name="coffee" size={40} color={theme.textSecondary} />
+            <ThemedText type="body" style={{ color: theme.textSecondary }}>
+              Нет доступных блюд на сегодня
+            </ThemedText>
+          </View>
+        )}
+
+        {canManage && unavailableItems.length > 0 ? (
+          <View style={styles.unavailableSection}>
+            <ThemedText type="body" style={[styles.sectionLabel, { color: theme.textSecondary }]}>
+              Недоступные блюда ({unavailableItems.length})
             </ThemedText>
             <View style={styles.menuList}>
-              {items.map((item) => (
-                <Card key={item.id} style={[styles.menuCard, !item.isAvailable ? styles.unavailableCard : undefined]}>
+              {unavailableItems.map((item) => (
+                <Card key={item.id} style={[styles.menuCard, styles.unavailableCard]}>
                   <View style={styles.menuHeader}>
                     <View
                       style={[
                         styles.categoryIcon,
-                        { backgroundColor: item.isAvailable ? Colors.light.success + "20" : theme.border + "40" },
+                        { backgroundColor: theme.border + "40" },
                       ]}
                     >
                       <Feather
-                        name={CATEGORY_LABELS[category]?.icon as any || "circle"}
+                        name={CATEGORY_LABELS[item.category]?.icon as any || "circle"}
                         size={20}
-                        color={item.isAvailable ? Colors.light.success : theme.textSecondary}
+                        color={theme.textSecondary}
                       />
                     </View>
                     <View style={styles.menuInfo}>
-                      <ThemedText type="body" style={[styles.dishName, !item.isAvailable && { color: theme.textSecondary }]}>
+                      <ThemedText type="body" style={[styles.dishName, { color: theme.textSecondary }]}>
                         {item.name}
                       </ThemedText>
-                      {item.description ? (
-                        <ThemedText type="caption" style={{ color: theme.textSecondary }} numberOfLines={2}>
-                          {item.description}
-                        </ThemedText>
-                      ) : null}
                     </View>
-                    <View style={styles.priceContainer}>
-                      <ThemedText type="body" style={[styles.price, { color: theme.primary }]}>
-                        {item.price} Руб
-                      </ThemedText>
-                      {!item.isAvailable ? (
-                        <ThemedText type="caption" style={{ color: theme.error }}>
-                          Нет
-                        </ThemedText>
-                      ) : null}
-                    </View>
-                    {permissions.canEditCafeteriaMenu ? (
+                    <View style={styles.controls}>
+                      <Switch
+                        value={item.isAvailable}
+                        onValueChange={() => toggleItemAvailability(item)}
+                        trackColor={{ false: theme.border, true: Colors.light.success }}
+                      />
                       <Pressable onPress={() => openEditModal(item)} style={styles.editButton}>
-                        <Feather name="edit-2" size={18} color={theme.textSecondary} />
+                        <Feather name="edit-2" size={16} color={theme.textSecondary} />
                       </Pressable>
-                    ) : null}
+                    </View>
                   </View>
                 </Card>
               ))}
             </View>
           </View>
-        ))}
+        ) : null}
       </ScrollView>
 
       <Modal visible={editModalVisible} animationType="slide" transparent>
@@ -256,17 +335,6 @@ export default function CafeteriaScreen() {
                   onChangeText={(text) => setFormData((prev) => ({ ...prev, description: text }))}
                   placeholder="Описание блюда"
                   placeholderTextColor={theme.textSecondary}
-                />
-              </View>
-              <View style={styles.formGroup}>
-                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Цена (руб)</ThemedText>
-                <TextInput
-                  style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
-                  value={formData.price}
-                  onChangeText={(text) => setFormData((prev) => ({ ...prev, price: text.replace(/[^0-9.]/g, "") }))}
-                  placeholder="100"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="decimal-pad"
                 />
               </View>
               <View style={styles.formGroup}>
@@ -313,7 +381,7 @@ export default function CafeteriaScreen() {
                   ]}>
                     {formData.isAvailable ? <Feather name="check" size={14} color="#FFFFFF" /> : null}
                   </View>
-                  <ThemedText type="body">В наличии</ThemedText>
+                  <ThemedText type="body">Доступно сегодня</ThemedText>
                 </Pressable>
               </View>
               <Button onPress={handleSave} style={{ marginTop: Spacing.lg }}>
@@ -350,7 +418,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: Spacing["2xl"],
+    marginBottom: Spacing.xl,
   },
   addButton: {
     width: 36,
@@ -359,17 +427,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  editButton: {
-    padding: Spacing.sm,
+  manageHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  sectionLabel: {
+    marginBottom: Spacing.md,
+    fontWeight: "600",
+  },
+  noAvailable: {
+    alignItems: "center",
+    padding: Spacing["2xl"],
+    gap: Spacing.md,
   },
   categorySection: {
     marginBottom: Spacing.xl,
   },
   categoryTitle: {
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
+    fontWeight: "500",
   },
   menuList: {
-    gap: Spacing.md,
+    gap: Spacing.sm,
   },
   menuCard: {
     padding: Spacing.md,
@@ -395,11 +477,19 @@ const styles = StyleSheet.create({
   dishName: {
     fontWeight: "600",
   },
-  priceContainer: {
-    alignItems: "flex-end",
+  controls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
   },
-  price: {
-    fontWeight: "700",
+  editButton: {
+    padding: Spacing.xs,
+  },
+  unavailableSection: {
+    marginTop: Spacing.xl,
+    paddingTop: Spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(0,0,0,0.1)",
   },
   modalOverlay: {
     flex: 1,
