@@ -1,5 +1,5 @@
-import React from "react";
-import { View, StyleSheet, ScrollView, Pressable, Alert } from "react-native";
+import React, { useState } from "react";
+import { View, StyleSheet, ScrollView, Pressable, Alert, Switch, Modal, TextInput } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,7 +8,10 @@ import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
+import { Button } from "@/components/Button";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useTheme } from "@/hooks/useTheme";
+import { useThemeContext } from "@/context/ThemeContext";
 import { Spacing, BorderRadius, Colors, RoleBadgeColors } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 
@@ -24,7 +27,13 @@ export default function ProfileScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { user, logout } = useAuth();
+  const { themeMode, setThemeMode, notificationsEnabled, setNotificationsEnabled } = useThemeContext();
+  const { user, logout, updateUserProfile } = useAuth();
+  
+  const [editProfileVisible, setEditProfileVisible] = useState(false);
+  const [themeModalVisible, setThemeModalVisible] = useState(false);
+  const [firstName, setFirstName] = useState(user?.firstName || "");
+  const [lastName, setLastName] = useState(user?.lastName || "");
 
   const handleLogout = () => {
     Alert.alert("Выход", "Вы уверены, что хотите выйти?", [
@@ -33,21 +42,42 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const handleSaveProfile = () => {
+    if (updateUserProfile) {
+      updateUserProfile({ firstName, lastName });
+    }
+    setEditProfileVisible(false);
+  };
+
   const getRoleLabel = () => {
     if (!user) return "";
-    const labels = {
+    const labels: Record<string, string> = {
       student: "Ученик",
       teacher: "Учитель",
       director: "Директор",
       curator: "Куратор",
+      cook: "Повар",
     };
-    return labels[user.role];
+    return labels[user.role] || user.role;
   };
 
   const getRoleBadgeColor = () => {
     if (!user) return Colors.light.primary;
-    return RoleBadgeColors[user.role];
+    return RoleBadgeColors[user.role] || Colors.light.primary;
   };
+
+  const getThemeLabel = () => {
+    switch (themeMode) {
+      case "light": return "Светлая";
+      case "dark": return "Тёмная";
+      case "system": return "Системная";
+      default: return "Системная";
+    }
+  };
+
+  const displayName = user?.firstName && user?.lastName 
+    ? `${user.firstName} ${user.lastName}`
+    : user?.name || "Пользователь";
 
   return (
     <ThemedView style={styles.container}>
@@ -67,7 +97,7 @@ export default function ProfileScreen() {
             <Feather name="user" size={48} color={theme.primary} />
           </View>
           <ThemedText type="h3" style={styles.userName}>
-            {user?.name || "Пользователь"}
+            {displayName}
           </ThemedText>
           <View style={styles.roleRow}>
             <View style={[styles.roleBadge, { backgroundColor: getRoleBadgeColor() }]}>
@@ -79,6 +109,19 @@ export default function ProfileScreen() {
               {user?.className}
             </ThemedText>
           </View>
+          <Pressable 
+            onPress={() => {
+              setFirstName(user?.firstName || "");
+              setLastName(user?.lastName || "");
+              setEditProfileVisible(true);
+            }}
+            style={[styles.editProfileButton, { borderColor: theme.border }]}
+          >
+            <Feather name="edit-2" size={14} color={theme.primary} />
+            <ThemedText type="small" style={{ color: theme.primary }}>
+              Редактировать профиль
+            </ThemedText>
+          </Pressable>
         </View>
 
         <View style={styles.achievementsSection}>
@@ -130,16 +173,34 @@ export default function ProfileScreen() {
             Настройки
           </ThemedText>
           <Card style={styles.settingsCard}>
-            <SettingsItem
-              icon="bell"
-              label="Уведомления"
-              onPress={() => {}}
-            />
-            <SettingsItem
-              icon="moon"
-              label="Тема оформления"
-              onPress={() => {}}
-            />
+            <View style={[styles.settingsItem, { borderBottomColor: theme.border }]}>
+              <Feather name="bell" size={20} color={theme.textSecondary} />
+              <ThemedText type="body" style={styles.settingsLabel}>
+                Уведомления
+              </ThemedText>
+              <Switch
+                value={notificationsEnabled}
+                onValueChange={setNotificationsEnabled}
+                trackColor={{ false: theme.border, true: theme.primary + "60" }}
+                thumbColor={notificationsEnabled ? theme.primary : theme.textSecondary}
+              />
+            </View>
+            <Pressable
+              onPress={() => setThemeModalVisible(true)}
+              style={({ pressed }) => [
+                styles.settingsItem,
+                { opacity: pressed ? 0.7 : 1, borderBottomColor: theme.border },
+              ]}
+            >
+              <Feather name="moon" size={20} color={theme.textSecondary} />
+              <ThemedText type="body" style={styles.settingsLabel}>
+                Тема оформления
+              </ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                {getThemeLabel()}
+              </ThemedText>
+              <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+            </Pressable>
             <SettingsItem
               icon="globe"
               label="Язык"
@@ -183,6 +244,80 @@ export default function ProfileScreen() {
           </ThemedText>
         </Pressable>
       </ScrollView>
+
+      <Modal visible={editProfileVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.backgroundRoot }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText type="h4">Редактировать профиль</ThemedText>
+              <Pressable onPress={() => setEditProfileVisible(false)}>
+                <Feather name="x" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+            <KeyboardAwareScrollViewCompat contentContainerStyle={styles.modalForm}>
+              <View style={styles.formGroup}>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Имя</ThemedText>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  placeholder="Введите имя"
+                  placeholderTextColor={theme.textSecondary}
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Фамилия</ThemedText>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                  value={lastName}
+                  onChangeText={setLastName}
+                  placeholder="Введите фамилию"
+                  placeholderTextColor={theme.textSecondary}
+                />
+              </View>
+              <Button onPress={handleSaveProfile} style={{ marginTop: Spacing.lg }}>
+                Сохранить
+              </Button>
+            </KeyboardAwareScrollViewCompat>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={themeModalVisible} animationType="fade" transparent>
+        <Pressable style={styles.modalOverlay} onPress={() => setThemeModalVisible(false)}>
+          <View style={[styles.themeModalContent, { backgroundColor: theme.backgroundRoot }]}>
+            <ThemedText type="h4" style={styles.themeModalTitle}>Тема оформления</ThemedText>
+            {([
+              { mode: "light", label: "Светлая", icon: "sun" },
+              { mode: "dark", label: "Тёмная", icon: "moon" },
+              { mode: "system", label: "Системная", icon: "smartphone" },
+            ] as const).map((item) => (
+              <Pressable
+                key={item.mode}
+                onPress={() => {
+                  setThemeMode(item.mode);
+                  setThemeModalVisible(false);
+                }}
+                style={[
+                  styles.themeOption,
+                  { 
+                    backgroundColor: themeMode === item.mode ? theme.primary + "15" : "transparent",
+                    borderColor: themeMode === item.mode ? theme.primary : theme.border,
+                  }
+                ]}
+              >
+                <Feather name={item.icon as any} size={20} color={themeMode === item.mode ? theme.primary : theme.textSecondary} />
+                <ThemedText type="body" style={{ color: themeMode === item.mode ? theme.primary : theme.text }}>
+                  {item.label}
+                </ThemedText>
+                {themeMode === item.mode ? (
+                  <Feather name="check" size={20} color={theme.primary} style={{ marginLeft: "auto" }} />
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
     </ThemedView>
   );
 }
@@ -248,6 +383,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   roleBadge: {
     paddingHorizontal: Spacing.md,
@@ -257,6 +393,15 @@ const styles = StyleSheet.create({
   roleBadgeText: {
     color: "#FFFFFF",
     fontWeight: "600",
+  },
+  editProfileButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
   },
   achievementsSection: {
     marginBottom: Spacing["2xl"],
@@ -324,5 +469,56 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     borderRadius: BorderRadius.md,
     marginBottom: Spacing.xl,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    padding: Spacing.xl,
+    maxHeight: "60%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.xl,
+  },
+  modalForm: {
+    gap: Spacing.md,
+  },
+  formGroup: {
+    gap: Spacing.xs,
+  },
+  input: {
+    height: Spacing.inputHeight,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.lg,
+    fontSize: 16,
+    borderWidth: 1,
+  },
+  themeModalContent: {
+    position: "absolute",
+    bottom: 100,
+    left: Spacing.lg,
+    right: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+  },
+  themeModalTitle: {
+    marginBottom: Spacing.lg,
+    textAlign: "center",
+  },
+  themeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    marginBottom: Spacing.sm,
   },
 });

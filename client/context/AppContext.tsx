@@ -57,6 +57,7 @@ interface AppContextType {
   todayAttendance: Attendance | null;
   grades: Grade[];
   homework: Homework[];
+  submitHomework: (id: string) => void;
   menuItems: MenuItem[];
   rateMenuItem: (id: string, rating: number) => void;
   addMenuItem: (item: Omit<MenuItem, "id" | "rating" | "ratingCount">) => void;
@@ -211,6 +212,7 @@ const MOCK_SCHEDULE: ScheduleItem[] = [
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [homework, setHomework] = useState<Homework[]>(MOCK_HOMEWORK);
   const [menuItems, setMenuItems] = useState<MenuItem[]>(MOCK_MENU);
   const [events, setEvents] = useState<Event[]>(MOCK_EVENTS);
   const [schedule, setSchedule] = useState<ScheduleItem[]>(MOCK_SCHEDULE);
@@ -321,6 +323,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setIsEvenWeek((prev) => !prev);
   };
 
+  const submitHomework = (id: string) => {
+    setHomework((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, status: "submitted" as const } : item
+      )
+    );
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -328,7 +338,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         markAttendance,
         todayAttendance,
         grades: MOCK_GRADES,
-        homework: MOCK_HOMEWORK,
+        homework,
+        submitHomework,
         menuItems,
         rateMenuItem,
         addMenuItem,

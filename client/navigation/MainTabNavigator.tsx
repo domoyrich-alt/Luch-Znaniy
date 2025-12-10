@@ -35,8 +35,11 @@ export default function MainTabNavigator() {
           backgroundColor: Platform.select({
             ios: "transparent",
             android: theme.backgroundRoot,
+            web: theme.backgroundRoot,
+            default: theme.backgroundRoot,
           }),
-          borderTopWidth: 0,
+          borderTopWidth: 1,
+          borderTopColor: theme.border,
           elevation: 0,
         },
         tabBarBackground: () =>
@@ -46,7 +49,9 @@ export default function MainTabNavigator() {
               tint={isDark ? "dark" : "light"}
               style={StyleSheet.absoluteFill}
             />
-          ) : null,
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundRoot }]} />
+          ),
         headerShown: false,
       }}
     >

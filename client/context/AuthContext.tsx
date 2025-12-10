@@ -5,6 +5,8 @@ export type UserRole = "student" | "teacher" | "director" | "curator" | "cook";
 export interface User {
   id: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   role: UserRole;
   classId: string;
@@ -43,6 +45,7 @@ function getRolePermissions(role: UserRole): Permissions {
         ...basePermissions,
         canEditSchedule: true,
         canEditClassComposition: true,
+        canManageEvents: true,
         canManageHomework: true,
         canEditGrades: true,
       };
@@ -58,12 +61,13 @@ function getRolePermissions(role: UserRole): Permissions {
       };
     case "director":
       return {
-        ...basePermissions,
         canEditSchedule: true,
         canEditClassComposition: true,
+        canEditCafeteriaMenu: true,
         canManageEvents: true,
         canManageAnnouncements: true,
         canManageHomework: true,
+        canViewGrades: true,
         canEditGrades: true,
       };
     case "cook":
@@ -82,6 +86,7 @@ interface AuthContextType {
   permissions: Permissions;
   login: (inviteCode: string, role: UserRole) => void;
   logout: () => void;
+  updateUserProfile: (updates: { firstName?: string; lastName?: string }) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -154,6 +159,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const updateUserProfile = (updates: { firstName?: string; lastName?: string }) => {
+    if (user) {
+      const updatedUser = {
+        ...user,
+        ...updates,
+        name: updates.firstName && updates.lastName 
+          ? `${updates.firstName} ${updates.lastName}` 
+          : user.name,
+      };
+      setUser(updatedUser);
+    }
+  };
+
   const permissions = user ? getRolePermissions(user.role) : defaultPermissions;
 
   return (
@@ -164,6 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         permissions,
         login,
         logout,
+        updateUserProfile,
       }}
     >
       {children}
