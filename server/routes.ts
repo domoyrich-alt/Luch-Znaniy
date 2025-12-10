@@ -24,18 +24,36 @@ function generateInviteCode(className: string): string {
   return code;
 }
 
-function hashPassword(password: string): string {
-  return crypto.createHash("sha256").update(password).digest("hex");
+const TOKEN_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+
+function hashPassword(password: string, salt?: string): string {
+  const useSalt = salt || crypto.randomBytes(16).toString("hex");
+  const hash = crypto.pbkdf2Sync(password, useSalt, 10000, 64, "sha512").toString("hex");
+  return `${useSalt}:${hash}`;
+}
+
+function verifyPassword(password: string, storedHash: string): boolean {
+  const [salt, hash] = storedHash.split(":");
+  const verifyHash = crypto.pbkdf2Sync(password, salt, 10000, 64, "sha512").toString("hex");
+  return hash === verifyHash;
 }
 
 function generateToken(userId: string): string {
   const payload = { userId, exp: Date.now() + 7 * 24 * 60 * 60 * 1000 };
-  return Buffer.from(JSON.stringify(payload)).toString("base64");
+  const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto.createHmac("sha256", TOKEN_SECRET).update(payloadBase64).digest("base64url");
+  return `${payloadBase64}.${signature}`;
 }
 
 function verifyToken(token: string): string | null {
   try {
-    const payload = JSON.parse(Buffer.from(token, "base64").toString());
+    const [payloadBase64, signature] = token.split(".");
+    if (!payloadBase64 || !signature) return null;
+    
+    const expectedSignature = crypto.createHmac("sha256", TOKEN_SECRET).update(payloadBase64).digest("base64url");
+    if (signature !== expectedSignature) return null;
+    
+    const payload = JSON.parse(Buffer.from(payloadBase64, "base64url").toString());
     if (payload.exp < Date.now()) return null;
     return payload.userId;
   } catch {
@@ -116,11 +134,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Email и пароль обязательны" });
       }
 
-      const hashedPassword = hashPassword(password);
       const result = await db.select().from(directors)
         .where(eq(directors.email, email));
 
-      if (result.length === 0 || result[0].password !== hashedPassword) {
+      if (result.length === 0 || !verifyPassword(password, result[0].password)) {
         return res.status(401).json({ error: "Неверный email или пароль" });
       }
 
