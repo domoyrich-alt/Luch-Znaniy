@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, ReactNode, useEffect } from
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiUrl } from "@/lib/query-client";
 
-export type UserRole = "student" | "teacher" | "director" | "curator" | "cook";
+export type UserRole = "student" | "teacher" | "director" | "curator" | "cook" | "ceo" | "parent";
 
 export interface User {
   id: number;
@@ -12,6 +12,7 @@ export interface User {
   role: UserRole;
   classId: number | null;
   className: string;
+  parentOfId?: number | null;
 }
 
 export interface Permissions {
@@ -23,6 +24,8 @@ export interface Permissions {
   canManageHomework: boolean;
   canViewGrades: boolean;
   canEditGrades: boolean;
+  canCreateInviteCodes: boolean;
+  canManageUsers: boolean;
 }
 
 function getRolePermissions(role: UserRole): Permissions {
@@ -35,11 +38,18 @@ function getRolePermissions(role: UserRole): Permissions {
     canManageHomework: false,
     canViewGrades: true,
     canEditGrades: false,
+    canCreateInviteCodes: false,
+    canManageUsers: false,
   };
 
   switch (role) {
     case "student":
       return basePermissions;
+    case "parent":
+      return {
+        ...basePermissions,
+        canViewGrades: true,
+      };
     case "teacher":
       return {
         ...basePermissions,
@@ -48,6 +58,7 @@ function getRolePermissions(role: UserRole): Permissions {
         canManageEvents: true,
         canManageHomework: true,
         canEditGrades: true,
+        canCreateInviteCodes: true,
       };
     case "curator":
       return {
@@ -58,6 +69,7 @@ function getRolePermissions(role: UserRole): Permissions {
         canManageAnnouncements: true,
         canManageHomework: true,
         canEditGrades: true,
+        canCreateInviteCodes: true,
       };
     case "director":
       return {
@@ -69,6 +81,21 @@ function getRolePermissions(role: UserRole): Permissions {
         canManageHomework: true,
         canViewGrades: true,
         canEditGrades: true,
+        canCreateInviteCodes: true,
+        canManageUsers: true,
+      };
+    case "ceo":
+      return {
+        canEditSchedule: true,
+        canEditClassComposition: true,
+        canEditCafeteriaMenu: true,
+        canManageEvents: true,
+        canManageAnnouncements: true,
+        canManageHomework: true,
+        canViewGrades: true,
+        canEditGrades: true,
+        canCreateInviteCodes: true,
+        canManageUsers: true,
       };
     case "cook":
       return {
@@ -225,6 +252,8 @@ function getRoleLabel(role: UserRole): string {
     director: "Директор",
     curator: "Куратор",
     cook: "Повар",
+    ceo: "CEO",
+    parent: "Родитель",
   };
   return labels[role] || role;
 }

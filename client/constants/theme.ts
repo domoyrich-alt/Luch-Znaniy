@@ -62,6 +62,8 @@ export const RoleBadgeColors: Record<string, string> = {
   director: "#F59E0B",
   curator: "#EF4444",
   cook: "#8B5CF6",
+  ceo: "#DC2626",
+  parent: "#0EA5E9",
 };
 
 export const GradeColors = {

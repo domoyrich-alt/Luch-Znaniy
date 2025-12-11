@@ -18,6 +18,8 @@ export const users = pgTable("users", {
   role: text("role").notNull().default("student"),
   classId: integer("class_id").references(() => classes.id),
   inviteCode: text("invite_code").notNull(),
+  parentOfId: integer("parent_of_id").references(() => users.id),
+  createdById: integer("created_by_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -27,6 +29,9 @@ export const inviteCodes = pgTable("invite_codes", {
   role: text("role").notNull(),
   classId: integer("class_id").references(() => classes.id),
   isActive: boolean("is_active").default(true),
+  usedCount: integer("used_count").default(0),
+  maxUses: integer("max_uses"),
+  createdById: integer("created_by_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -130,10 +135,20 @@ export const attendance = pgTable("attendance", {
 
 export const chatMessages = pgTable("chat_messages", {
   id: serial("id").primaryKey(),
-  homeworkId: integer("homework_id").notNull().references(() => homework.id),
+  homeworkId: integer("homework_id").references(() => homework.id),
+  classId: integer("class_id").references(() => classes.id),
   senderId: integer("sender_id").notNull().references(() => users.id),
   message: text("message").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const achievements = pgTable("achievements", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().references(() => users.id),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  earnedAt: timestamp("earned_at").defaultNow(),
 });
 
 export const insertClassSchema = createInsertSchema(classes).omit({ id: true, createdAt: true });
@@ -149,6 +164,7 @@ export const insertNewsSchema = createInsertSchema(news).omit({ id: true, create
 export const insertCafeteriaMenuSchema = createInsertSchema(cafeteriaMenu).omit({ id: true, createdAt: true });
 export const insertAttendanceSchema = createInsertSchema(attendance).omit({ id: true, createdAt: true });
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
+export const insertAchievementSchema = createInsertSchema(achievements).omit({ id: true, earnedAt: true });
 
 export type Class = typeof classes.$inferSelect;
 export type InsertClass = z.infer<typeof insertClassSchema>;
@@ -176,3 +192,5 @@ export type Attendance = typeof attendance.$inferSelect;
 export type InsertAttendance = z.infer<typeof insertAttendanceSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+export type Achievement = typeof achievements.$inferSelect;
+export type InsertAchievement = z.infer<typeof insertAchievementSchema>;

@@ -12,6 +12,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Код приглашения и роль обязательны" });
       }
 
+      if (!firstName || !firstName.trim()) {
+        return res.status(400).json({ error: "Имя обязательно" });
+      }
+
+      if (!lastName || !lastName.trim()) {
+        return res.status(400).json({ error: "Фамилия обязательна" });
+      }
+
       const validation = await storage.validateInviteCode(inviteCode.toUpperCase(), role);
       
       if (!validation.valid) {
@@ -19,8 +27,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const user = await storage.createUser({
-        firstName: firstName || "Пользователь",
-        lastName: lastName || "",
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         role,
         classId: validation.classId || null,
         inviteCode: inviteCode.toUpperCase(),
@@ -563,7 +571,188 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/invite-codes", async (req: Request, res: Response) => {
+    try {
+      const { role, classId, createdById, maxUses } = req.body;
+
+      if (!role || !createdById) {
+        return res.status(400).json({ error: "Роль и создатель обязательны" });
+      }
+
+      const code = generateInviteCode(role, classId);
+      
+      const inviteCode = await storage.createInviteCode({
+        code,
+        role,
+        classId: classId || null,
+        isActive: true,
+        createdById,
+        maxUses: maxUses || null,
+      });
+
+      res.json(inviteCode);
+    } catch (error) {
+      console.error("Create invite code error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.get("/api/leaderboard/:level", async (req: Request, res: Response) => {
+    try {
+      const { level } = req.params;
+      let minGrade: number, maxGrade: number;
+      
+      switch (level) {
+        case "junior":
+          minGrade = 1;
+          maxGrade = 4;
+          break;
+        case "middle":
+          minGrade = 5;
+          maxGrade = 8;
+          break;
+        case "senior":
+          minGrade = 9;
+          maxGrade = 11;
+          break;
+        default:
+          return res.status(400).json({ error: "Неверный уровень. Используйте: junior, middle, senior" });
+      }
+      
+      const leaderboard = await storage.getLeaderboard(minGrade, maxGrade, 10);
+      res.json(leaderboard);
+    } catch (error) {
+      console.error("Get leaderboard error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.get("/api/class-chat/:classId", async (req: Request, res: Response) => {
+    try {
+      const classId = parseInt(req.params.classId);
+      const messages = await storage.getClassChatMessages(classId);
+      
+      const messagesWithUsers = await Promise.all(
+        messages.map(async (msg: any) => {
+          const sender = await storage.getUser(msg.senderId);
+          return {
+            ...msg,
+            senderName: sender ? `${sender.firstName} ${sender.lastName}`.trim() : "Неизвестный",
+          };
+        })
+      );
+      
+      res.json(messagesWithUsers);
+    } catch (error) {
+      console.error("Get class chat error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.post("/api/class-chat/:classId", async (req: Request, res: Response) => {
+    try {
+      const classId = parseInt(req.params.classId);
+      const { senderId, message } = req.body;
+
+      if (!senderId || !message) {
+        return res.status(400).json({ error: "ID отправителя и сообщение обязательны" });
+      }
+
+      const chatMessage = await storage.createChatMessage({
+        classId,
+        senderId,
+        message,
+      });
+
+      res.json(chatMessage);
+    } catch (error) {
+      console.error("Create class chat message error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.get("/api/achievements/:studentId", async (req: Request, res: Response) => {
+    try {
+      const studentId = parseInt(req.params.studentId);
+      const achievementsList = await storage.getAchievementsByStudent(studentId);
+      res.json(achievementsList);
+    } catch (error) {
+      console.error("Get achievements error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.post("/api/achievements/:studentId/calculate", async (req: Request, res: Response) => {
+    try {
+      const studentId = parseInt(req.params.studentId);
+      
+      const user = await storage.getUser(studentId);
+      if (!user) {
+        return res.status(404).json({ error: "Пользователь не найден" });
+      }
+
+      const gradesList = await storage.getGradesByStudent(studentId);
+      const averageGrade = await storage.getAverageGradeByStudent(studentId);
+      
+      const existingAchievements = await storage.getAchievementsByStudent(studentId);
+      const existingTypes = new Set(existingAchievements.map(a => a.type));
+      
+      const newAchievements: { type: string; title: string; description: string; progress: number }[] = [];
+      
+      if (averageGrade >= 4.5 && !existingTypes.has("excellent_grades")) {
+        const progress = Math.min(100, Math.round((averageGrade / 5) * 100));
+        newAchievements.push({
+          type: "excellent_grades",
+          title: "Отличник",
+          description: "Средний балл 4.5 или выше",
+          progress,
+        });
+      }
+      
+      if (gradesList.length >= 10 && !existingTypes.has("homework_champion")) {
+        const progress = Math.min(100, gradesList.length * 2);
+        newAchievements.push({
+          type: "homework_champion",
+          title: "Прилежный ученик",
+          description: "Получено 10+ оценок",
+          progress,
+        });
+      }
+      
+      for (const achievement of newAchievements) {
+        await storage.createAchievement({
+          studentId,
+          type: achievement.type,
+          title: achievement.title,
+          description: achievement.description,
+          progress: achievement.progress,
+        });
+      }
+      
+      const updatedAchievements = await storage.getAchievementsByStudent(studentId);
+      res.json(updatedAchievements);
+    } catch (error) {
+      console.error("Calculate achievements error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
   const httpServer = createServer(app);
+
+function generateInviteCode(role: string, classId?: number): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let suffix = "";
+  for (let i = 0; i < 6; i++) {
+    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  
+  if (classId) {
+    return `CLASS${classId}-${suffix}`;
+  }
+  
+  const prefix = role.toUpperCase().substring(0, 4);
+  return `${prefix}-${suffix}`;
+}
 
   return httpServer;
 }

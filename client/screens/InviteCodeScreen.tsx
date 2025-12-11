@@ -14,8 +14,8 @@ import { useAuth, UserRole } from "@/context/AuthContext";
 
 const ROLES: { key: UserRole; label: string; icon: string; color: string }[] = [
   { key: "student", label: "Ученик", icon: "user", color: Colors.light.secondary },
+  { key: "parent", label: "Родитель", icon: "users", color: Colors.light.primary },
   { key: "teacher", label: "Учитель", icon: "book", color: Colors.light.success },
-  { key: "director", label: "Директор", icon: "briefcase", color: Colors.light.warning },
   { key: "curator", label: "Куратор", icon: "shield", color: Colors.light.error },
   { key: "cook", label: "Повар", icon: "coffee", color: "#8B5CF6" },
 ];
@@ -34,11 +34,19 @@ export default function InviteCodeScreen() {
 
   const handleSubmit = async () => {
     if (!inviteCode.trim()) {
-      setLocalError("Введите инвайт-код");
+      setLocalError("Введите код приглашения");
+      return;
+    }
+    if (!firstName.trim()) {
+      setLocalError("Введите ваше имя");
+      return;
+    }
+    if (!lastName.trim()) {
+      setLocalError("Введите вашу фамилию");
       return;
     }
     setLocalError(null);
-    await login(inviteCode.toUpperCase(), selectedRole, firstName || undefined, lastName || undefined);
+    await login(inviteCode.toUpperCase(), selectedRole, firstName.trim(), lastName.trim());
   };
 
   const displayError = localError || error;
@@ -56,16 +64,63 @@ export default function InviteCodeScreen() {
       >
         <View style={styles.header}>
           <ThemedText type="h2" style={styles.title}>
-            Добро пожаловать!
+            Луч Знаний
           </ThemedText>
           <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Введите инвайт-код и выберите роль
+            Введите код приглашения для входа
           </ThemedText>
+        </View>
+
+        <View style={styles.nameContainer}>
+          <View style={styles.nameField}>
+            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
+              Имя *
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundDefault,
+                  color: theme.text,
+                  borderColor: !firstName.trim() && displayError ? Colors.light.error : theme.border,
+                },
+              ]}
+              placeholder="Ваше имя"
+              placeholderTextColor={theme.textSecondary}
+              value={firstName}
+              onChangeText={(text) => {
+                setFirstName(text);
+                setLocalError(null);
+              }}
+            />
+          </View>
+          <View style={styles.nameField}>
+            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
+              Фамилия *
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundDefault,
+                  color: theme.text,
+                  borderColor: !lastName.trim() && displayError ? Colors.light.error : theme.border,
+                },
+              ]}
+              placeholder="Ваша фамилия"
+              placeholderTextColor={theme.textSecondary}
+              value={lastName}
+              onChangeText={(text) => {
+                setLastName(text);
+                setLocalError(null);
+              }}
+            />
+          </View>
         </View>
 
         <View style={styles.inputContainer}>
           <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
-            Инвайт-код
+            Код приглашения *
           </ThemedText>
           <TextInput
             style={[
@@ -76,7 +131,7 @@ export default function InviteCodeScreen() {
                 borderColor: displayError ? Colors.light.error : theme.border,
               },
             ]}
-            placeholder="Например: CLASS9-ELNS5"
+            placeholder="Введите код"
             placeholderTextColor={theme.textSecondary}
             value={inviteCode}
             onChangeText={(text) => {
@@ -86,47 +141,6 @@ export default function InviteCodeScreen() {
             autoCapitalize="characters"
             autoCorrect={false}
           />
-        </View>
-
-        <View style={styles.nameContainer}>
-          <View style={styles.nameField}>
-            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
-              Имя (необязательно)
-            </ThemedText>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: theme.backgroundDefault,
-                  color: theme.text,
-                  borderColor: theme.border,
-                },
-              ]}
-              placeholder="Ваше имя"
-              placeholderTextColor={theme.textSecondary}
-              value={firstName}
-              onChangeText={setFirstName}
-            />
-          </View>
-          <View style={styles.nameField}>
-            <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
-              Фамилия (необязательно)
-            </ThemedText>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: theme.backgroundDefault,
-                  color: theme.text,
-                  borderColor: theme.border,
-                },
-              ]}
-              placeholder="Ваша фамилия"
-              placeholderTextColor={theme.textSecondary}
-              value={lastName}
-              onChangeText={setLastName}
-            />
-          </View>
         </View>
 
         <View style={styles.roleContainer}>
@@ -190,15 +204,10 @@ export default function InviteCodeScreen() {
           </View>
         ) : null}
 
-        <View style={styles.exampleContainer}>
-          <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "center" }}>
-            Коды классов: CLASS1-KPMD2, CLASS9-ELNS5, CLASS11-HMWK7
-          </ThemedText>
-          <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "center" }}>
-            Директор: DIRECTOR-2024-LUCH
-          </ThemedText>
-          <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "center" }}>
-            Учитель: TEACHER-MATH-001 | Повар: COOK-MENU-001
+        <View style={[styles.infoContainer, { backgroundColor: theme.backgroundSecondary }]}>
+          <Feather name="info" size={16} color={theme.textSecondary} />
+          <ThemedText type="caption" style={{ color: theme.textSecondary, flex: 1 }}>
+            Код приглашения выдается администрацией школы. Обратитесь к классному руководителю или директору.
           </ThemedText>
         </View>
 
@@ -292,11 +301,13 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     marginBottom: Spacing.lg,
   },
-  exampleContainer: {
-    padding: Spacing.lg,
+  infoContainer: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
+    padding: Spacing.md,
     borderRadius: BorderRadius.sm,
     marginBottom: Spacing.lg,
-    gap: Spacing.xs,
   },
   submitButton: {
     marginTop: Spacing.md,

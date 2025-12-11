@@ -3,7 +3,10 @@ import { View, StyleSheet, ScrollView, Pressable, Alert, Switch, Modal, TextInpu
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -14,13 +17,26 @@ import { useTheme } from "@/hooks/useTheme";
 import { useThemeContext } from "@/context/ThemeContext";
 import { Spacing, BorderRadius, Colors, RoleBadgeColors } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
+import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
-const ACHIEVEMENTS = [
-  { id: "1", title: "Отличник", icon: "award", color: Colors.light.yellowAccent, progress: 100 },
-  { id: "2", title: "Пунктуальный", icon: "clock", color: Colors.light.success, progress: 85 },
-  { id: "3", title: "Активист", icon: "star", color: Colors.light.secondary, progress: 60 },
-  { id: "4", title: "Книжный червь", icon: "book", color: Colors.light.primary, progress: 40 },
-];
+interface Achievement {
+  id: number;
+  userId: number;
+  type: string;
+  title: string;
+  description: string | null;
+  progress: number;
+  unlockedAt: string | null;
+}
+
+const ACHIEVEMENT_CONFIG: Record<string, { icon: string; color: string }> = {
+  excellent_grades: { icon: "award", color: Colors.light.yellowAccent },
+  good_attendance: { icon: "clock", color: Colors.light.success },
+  active_participant: { icon: "star", color: Colors.light.secondary },
+  homework_champion: { icon: "book", color: Colors.light.primary },
+  top_scorer: { icon: "trending-up", color: Colors.light.error },
+  helpful_classmate: { icon: "heart", color: "#EC4899" },
+};
 
 export default function ProfileScreen() {
   const headerHeight = useHeaderHeight();
@@ -28,12 +44,18 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { themeMode, setThemeMode, notificationsEnabled, setNotificationsEnabled } = useThemeContext();
-  const { user, logout, updateUserProfile } = useAuth();
+  const { user, logout, updateUserProfile, permissions } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
   
   const [editProfileVisible, setEditProfileVisible] = useState(false);
   const [themeModalVisible, setThemeModalVisible] = useState(false);
   const [firstName, setFirstName] = useState(user?.firstName || "");
   const [lastName, setLastName] = useState(user?.lastName || "");
+
+  const { data: achievements = [] } = useQuery<Achievement[]>({
+    queryKey: [`/api/achievements/${user?.id}`],
+    enabled: !!user?.id,
+  });
 
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
@@ -68,6 +90,8 @@ export default function ProfileScreen() {
       director: "Директор",
       curator: "Куратор",
       cook: "Повар",
+      ceo: "CEO",
+      parent: "Родитель",
     };
     return labels[user.role] || user.role;
   };
@@ -139,44 +163,59 @@ export default function ProfileScreen() {
           <ThemedText type="h4" style={styles.sectionTitle}>
             Достижения
           </ThemedText>
-          <View style={styles.achievementsGrid}>
-            {ACHIEVEMENTS.map((achievement) => (
-              <View
-                key={achievement.id}
-                style={[styles.achievementCard, { backgroundColor: theme.backgroundDefault }]}
-              >
-                <View
-                  style={[
-                    styles.achievementIcon,
-                    { backgroundColor: achievement.color + "20" },
-                  ]}
-                >
-                  <Feather
-                    name={achievement.icon as any}
-                    size={24}
-                    color={achievement.color}
-                  />
-                </View>
-                <ThemedText type="small" style={styles.achievementTitle}>
-                  {achievement.title}
-                </ThemedText>
-                <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
+          {achievements.length > 0 ? (
+            <View style={styles.achievementsGrid}>
+              {achievements.map((achievement) => {
+                const config = ACHIEVEMENT_CONFIG[achievement.type] || { icon: "star", color: Colors.light.primary };
+                return (
                   <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: `${achievement.progress}%`,
-                        backgroundColor: achievement.color,
-                      },
-                    ]}
-                  />
-                </View>
-                <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-                  {achievement.progress}%
-                </ThemedText>
-              </View>
-            ))}
-          </View>
+                    key={achievement.id}
+                    style={[styles.achievementCard, { backgroundColor: theme.backgroundDefault }]}
+                  >
+                    <View
+                      style={[
+                        styles.achievementIcon,
+                        { backgroundColor: config.color + "20" },
+                      ]}
+                    >
+                      <Feather
+                        name={config.icon as any}
+                        size={24}
+                        color={config.color}
+                      />
+                    </View>
+                    <ThemedText type="small" style={styles.achievementTitle}>
+                      {achievement.title}
+                    </ThemedText>
+                    <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
+                      <View
+                        style={[
+                          styles.progressFill,
+                          {
+                            width: `${achievement.progress}%`,
+                            backgroundColor: config.color,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                      {achievement.progress}%
+                    </ThemedText>
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <Card style={{ padding: Spacing.lg, alignItems: "center" }}>
+              <Feather name="award" size={32} color={theme.textSecondary} />
+              <ThemedText type="body" style={{ color: theme.textSecondary, marginTop: Spacing.sm, textAlign: "center" }}>
+                Достижения пока не получены
+              </ThemedText>
+              <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "center" }}>
+                Продолжайте учиться чтобы получить награды
+              </ThemedText>
+            </Card>
+          )}
         </View>
 
         <View style={styles.settingsSection}>
@@ -218,6 +257,33 @@ export default function ProfileScreen() {
               value="Русский"
               onPress={() => {}}
             />
+          </Card>
+        </View>
+
+        <View style={styles.accountSection}>
+          <ThemedText type="h4" style={styles.sectionTitle}>
+            Быстрый доступ
+          </ThemedText>
+          <Card style={styles.settingsCard}>
+            <SettingsItem
+              icon="award"
+              label="Таблица лидеров"
+              onPress={() => navigation.navigate("Leaderboard")}
+            />
+            {user?.classId && (
+              <SettingsItem
+                icon="message-circle"
+                label="Чат класса"
+                onPress={() => navigation.navigate("ClassChat")}
+              />
+            )}
+            {permissions.canCreateInviteCodes && (
+              <SettingsItem
+                icon="key"
+                label="Управление приглашениями"
+                onPress={() => navigation.navigate("Admin")}
+              />
+            )}
           </Card>
         </View>
 
