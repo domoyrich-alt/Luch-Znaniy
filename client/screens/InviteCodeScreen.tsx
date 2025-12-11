@@ -17,7 +17,9 @@ const ROLES: { key: UserRole; label: string; icon: string; color: string }[] = [
   { key: "parent", label: "Родитель", icon: "users", color: Colors.light.primary },
   { key: "teacher", label: "Учитель", icon: "book", color: Colors.light.success },
   { key: "curator", label: "Куратор", icon: "shield", color: Colors.light.error },
+  { key: "director", label: "Директор", icon: "briefcase", color: "#F59E0B" },
   { key: "cook", label: "Повар", icon: "coffee", color: "#8B5CF6" },
+  { key: "ceo", label: "CEO", icon: "star", color: "#DC2626" },
 ];
 
 export default function InviteCodeScreen() {

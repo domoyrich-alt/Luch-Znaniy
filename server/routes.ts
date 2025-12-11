@@ -26,13 +26,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: validation.error });
       }
 
-      const user = await storage.createUser({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        role,
-        classId: validation.classId || null,
-        inviteCode: inviteCode.toUpperCase(),
-      });
+      let user = await storage.getUserByInviteCode(inviteCode.toUpperCase());
+      
+      if (!user) {
+        user = await storage.createUser({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          role,
+          classId: validation.classId || null,
+          inviteCode: inviteCode.toUpperCase(),
+        });
+      }
 
       res.json({
         user: {
