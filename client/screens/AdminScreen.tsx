@@ -62,14 +62,11 @@ export default function AdminScreen() {
 
   const createCodeMutation = useMutation({
     mutationFn: async ({ role, classId }: { role: string; classId?: number }) => {
-      const response = await apiRequest("/api/invite-codes", {
-        method: "POST",
-        body: JSON.stringify({
-          role,
-          classId,
-          createdById: user?.id,
-          maxUses: role === "student" ? null : 1,
-        }),
+      const response = await apiRequest("POST", "/api/invite-codes", {
+        role,
+        classId,
+        createdById: user?.id,
+        maxUses: role === "student" ? null : 1,
       });
       return response.json();
     },

@@ -136,13 +136,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const today = new Date().toISOString().split("T")[0];
   const todayAttendance = attendance.find((a) => a.date === today) || null;
+  const [attendanceStats, setAttendanceStats] = useState({ total: 0, present: 0, late: 0, absent: 0 });
 
-  const attendanceStats = {
-    total: classStudents.length || 42,
-    present: classStudents.filter(s => s.status === "present").length || 40,
-    late: classStudents.filter(s => s.status === "late").length || 2,
-    absent: classStudents.filter(s => s.status === "absent").length || 0,
-  };
+  const fetchAttendanceStats = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const response = await fetch(new URL(`/api/attendance-stats/${user.id}`, getApiUrl()).toString());
+      if (response.ok) {
+        const data = await response.json();
+        setAttendanceStats(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch attendance stats:", e);
+    }
+  }, [user?.id]);
 
   const fetchCafeteriaMenu = useCallback(async () => {
     try {
@@ -296,8 +303,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fetchHomework(),
       fetchSchedule(),
       fetchSubjects(),
+      fetchAttendanceStats(),
     ]).finally(() => setIsLoading(false));
-  }, [fetchCafeteriaMenu, fetchEvents, fetchNews, fetchGrades, fetchHomework, fetchSchedule, fetchSubjects]);
+  }, [fetchCafeteriaMenu, fetchEvents, fetchNews, fetchGrades, fetchHomework, fetchSchedule, fetchSubjects, fetchAttendanceStats]);
 
   const addHomework = async (hw: { subjectId: number; title: string; description: string; dueDate: string }) => {
     try {

@@ -542,6 +542,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/attendance-stats/:studentId", async (req: Request, res: Response) => {
+    try {
+      const studentId = parseInt(req.params.studentId);
+      const attendanceList = await storage.getAttendanceByStudent(studentId);
+      
+      const stats = {
+        total: attendanceList.length,
+        present: attendanceList.filter(a => a.status === "present").length,
+        late: attendanceList.filter(a => a.status === "late").length,
+        absent: attendanceList.filter(a => a.status === "absent").length,
+      };
+      
+      res.json(stats);
+    } catch (error) {
+      console.error("Get attendance stats error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
   app.get("/api/chat/:homeworkId", async (req: Request, res: Response) => {
     try {
       const homeworkId = parseInt(req.params.homeworkId);
