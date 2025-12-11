@@ -3,38 +3,48 @@ import { createServer, type Server } from "node:http";
 import { storage } from "./storage";
 import path from "path";
 
+function detectRoleFromCode(code: string): string | null {
+  if (code === "CEO-MASTER-2024") return "ceo";
+  if (code === "PARENT-2024") return "parent";
+  if (code.startsWith("CLASS") && code.includes("-")) return "student";
+  if (code.startsWith("TEACHER-")) return "teacher";
+  if (code.startsWith("DIRECTOR-")) return "director";
+  if (code.startsWith("CURATOR-")) return "curator";
+  if (code.startsWith("COOK-")) return "cook";
+  return null;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
-      const { inviteCode, role, firstName, lastName } = req.body;
+      const { inviteCode, firstName, lastName } = req.body;
 
-      if (!inviteCode || !role) {
-        return res.status(400).json({ error: "Код приглашения и роль обязательны" });
+      if (!inviteCode) {
+        return res.status(400).json({ error: "Код приглашения обязателен" });
       }
 
-      if (!firstName || !firstName.trim()) {
-        return res.status(400).json({ error: "Имя обязательно" });
+      const code = inviteCode.toUpperCase();
+      
+      const detectedRole = detectRoleFromCode(code);
+      if (!detectedRole) {
+        return res.status(400).json({ error: "Неверный код приглашения" });
       }
 
-      if (!lastName || !lastName.trim()) {
-        return res.status(400).json({ error: "Фамилия обязательна" });
-      }
-
-      const validation = await storage.validateInviteCode(inviteCode.toUpperCase(), role);
+      const validation = await storage.validateInviteCode(code, detectedRole);
       
       if (!validation.valid) {
         return res.status(400).json({ error: validation.error });
       }
 
-      let user = await storage.getUserByInviteCode(inviteCode.toUpperCase());
+      let user = await storage.getUserByInviteCode(code);
       
       if (!user) {
         user = await storage.createUser({
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          role,
+          firstName: (firstName || "").trim() || "Пользователь",
+          lastName: (lastName || "").trim() || "",
+          role: detectedRole,
           classId: validation.classId || null,
-          inviteCode: inviteCode.toUpperCase(),
+          inviteCode: code,
         });
       }
 

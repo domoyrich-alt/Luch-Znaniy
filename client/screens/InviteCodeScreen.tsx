@@ -19,7 +19,6 @@ const ROLES: { key: UserRole; label: string; icon: string; color: string }[] = [
   { key: "curator", label: "Куратор", icon: "shield", color: Colors.light.error },
   { key: "director", label: "Директор", icon: "briefcase", color: "#F59E0B" },
   { key: "cook", label: "Повар", icon: "coffee", color: "#8B5CF6" },
-  { key: "ceo", label: "CEO", icon: "star", color: "#DC2626" },
 ];
 
 export default function InviteCodeScreen() {
@@ -39,16 +38,8 @@ export default function InviteCodeScreen() {
       setLocalError("Введите код приглашения");
       return;
     }
-    if (!firstName.trim()) {
-      setLocalError("Введите ваше имя");
-      return;
-    }
-    if (!lastName.trim()) {
-      setLocalError("Введите вашу фамилию");
-      return;
-    }
     setLocalError(null);
-    await login(inviteCode.toUpperCase(), selectedRole, firstName.trim(), lastName.trim());
+    await login(inviteCode.toUpperCase(), selectedRole, firstName.trim() || "Пользователь", lastName.trim() || "");
   };
 
   const displayError = localError || error;
