@@ -770,6 +770,129 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/psychologist/chats", async (_req: Request, res: Response) => {
+    try {
+      const chats = await storage.getAllPsychologistChats();
+      res.json(chats);
+    } catch (error) {
+      console.error("Get psychologist chats error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.get("/api/psychologist/messages/:studentId", async (req: Request, res: Response) => {
+    try {
+      const studentId = parseInt(req.params.studentId);
+      const messages = await storage.getPsychologistMessages(studentId);
+      res.json(messages);
+    } catch (error) {
+      console.error("Get psychologist messages error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.post("/api/psychologist/messages", async (req: Request, res: Response) => {
+    try {
+      const { studentId, psychologistId, senderId, message } = req.body;
+      if (!studentId || !senderId) {
+        return res.status(400).json({ error: "ID студента и отправителя обязательны" });
+      }
+      const newMessage = await storage.createPsychologistMessage({ studentId, psychologistId, senderId, message });
+      res.json(newMessage);
+    } catch (error) {
+      console.error("Create psychologist message error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.post("/api/psychologist/messages/:studentId/read", async (req: Request, res: Response) => {
+    try {
+      const studentId = parseInt(req.params.studentId);
+      await storage.markPsychologistMessagesRead(studentId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Mark messages read error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.get("/api/teacher-subjects/:teacherId", async (req: Request, res: Response) => {
+    try {
+      const teacherId = parseInt(req.params.teacherId);
+      const subjects = await storage.getTeacherSubjects(teacherId);
+      res.json(subjects);
+    } catch (error) {
+      console.error("Get teacher subjects error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.post("/api/teacher-subjects/:teacherId", async (req: Request, res: Response) => {
+    try {
+      const teacherId = parseInt(req.params.teacherId);
+      const { subjects } = req.body;
+      if (!Array.isArray(subjects)) {
+        return res.status(400).json({ error: "Предметы должны быть массивом" });
+      }
+      await storage.setTeacherSubjects(teacherId, subjects);
+      const updated = await storage.getTeacherSubjects(teacherId);
+      res.json(updated);
+    } catch (error) {
+      console.error("Set teacher subjects error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.get("/api/online-lessons/:classId", async (req: Request, res: Response) => {
+    try {
+      const classId = parseInt(req.params.classId);
+      const lessons = await storage.getOnlineLessons(classId);
+      res.json(lessons);
+    } catch (error) {
+      console.error("Get online lessons error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.post("/api/online-lessons", async (req: Request, res: Response) => {
+    try {
+      const { classId, teacherId, subjectId, title, meetingUrl, meetingCode, scheduledAt, duration } = req.body;
+      if (!classId || !teacherId || !title || !scheduledAt) {
+        return res.status(400).json({ error: "Класс, учитель, название и время обязательны" });
+      }
+      const lesson = await storage.createOnlineLesson({ classId, teacherId, subjectId, title, meetingUrl, meetingCode, scheduledAt: new Date(scheduledAt), duration });
+      res.json(lesson);
+    } catch (error) {
+      console.error("Create online lesson error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.patch("/api/online-lessons/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const lesson = await storage.updateOnlineLesson(id, req.body);
+      if (!lesson) {
+        return res.status(404).json({ error: "Урок не найден" });
+      }
+      res.json(lesson);
+    } catch (error) {
+      console.error("Update online lesson error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.get("/api/users/role/:role", async (req: Request, res: Response) => {
+    try {
+      const { role } = req.params;
+      const usersList = await storage.getUsersByRole(role);
+      res.json(usersList);
+    } catch (error) {
+      console.error("Get users by role error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
   const httpServer = createServer(app);
 
 function generateInviteCode(role: string, classId?: number): string {

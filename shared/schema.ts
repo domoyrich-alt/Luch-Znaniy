@@ -138,7 +138,40 @@ export const chatMessages = pgTable("chat_messages", {
   homeworkId: integer("homework_id").references(() => homework.id),
   classId: integer("class_id").references(() => classes.id),
   senderId: integer("sender_id").notNull().references(() => users.id),
-  message: text("message").notNull(),
+  message: text("message"),
+  mediaType: text("media_type"),
+  mediaUrl: text("media_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const psychologistMessages = pgTable("psychologist_messages", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().references(() => users.id),
+  psychologistId: integer("psychologist_id").references(() => users.id),
+  senderId: integer("sender_id").notNull().references(() => users.id),
+  message: text("message"),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const teacherSubjects = pgTable("teacher_subjects", {
+  id: serial("id").primaryKey(),
+  teacherId: integer("teacher_id").notNull().references(() => users.id),
+  subjectName: text("subject_name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const onlineLessons = pgTable("online_lessons", {
+  id: serial("id").primaryKey(),
+  classId: integer("class_id").notNull().references(() => classes.id),
+  teacherId: integer("teacher_id").notNull().references(() => users.id),
+  subjectId: integer("subject_id").references(() => subjects.id),
+  title: text("title").notNull(),
+  meetingUrl: text("meeting_url"),
+  meetingCode: text("meeting_code"),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  duration: integer("duration").default(45),
+  status: text("status").default("scheduled"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -165,6 +198,9 @@ export const insertCafeteriaMenuSchema = createInsertSchema(cafeteriaMenu).omit(
 export const insertAttendanceSchema = createInsertSchema(attendance).omit({ id: true, createdAt: true });
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
 export const insertAchievementSchema = createInsertSchema(achievements).omit({ id: true, earnedAt: true });
+export const insertPsychologistMessageSchema = createInsertSchema(psychologistMessages).omit({ id: true, createdAt: true });
+export const insertTeacherSubjectSchema = createInsertSchema(teacherSubjects).omit({ id: true, createdAt: true });
+export const insertOnlineLessonSchema = createInsertSchema(onlineLessons).omit({ id: true, createdAt: true });
 
 export type Class = typeof classes.$inferSelect;
 export type InsertClass = z.infer<typeof insertClassSchema>;
@@ -194,3 +230,9 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type Achievement = typeof achievements.$inferSelect;
 export type InsertAchievement = z.infer<typeof insertAchievementSchema>;
+export type PsychologistMessage = typeof psychologistMessages.$inferSelect;
+export type InsertPsychologistMessage = z.infer<typeof insertPsychologistMessageSchema>;
+export type TeacherSubject = typeof teacherSubjects.$inferSelect;
+export type InsertTeacherSubject = z.infer<typeof insertTeacherSubjectSchema>;
+export type OnlineLesson = typeof onlineLessons.$inferSelect;
+export type InsertOnlineLesson = z.infer<typeof insertOnlineLessonSchema>;

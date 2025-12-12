@@ -3,7 +3,7 @@ import { eq, and, sql } from "drizzle-orm";
 import {
   users, classes, inviteCodes, subjects, grades, homework,
   homeworkSubmissions, scheduleItems, events, news, cafeteriaMenu,
-  attendance, chatMessages, achievements,
+  attendance, chatMessages, achievements, psychologistMessages, teacherSubjects, onlineLessons,
   type User, type InsertUser,
   type Class, type InsertClass,
   type InviteCode, type InsertInviteCode,
@@ -18,6 +18,9 @@ import {
   type Attendance, type InsertAttendance,
   type ChatMessage, type InsertChatMessage,
   type Achievement, type InsertAchievement,
+  type PsychologistMessage, type InsertPsychologistMessage,
+  type TeacherSubject, type InsertTeacherSubject,
+  type OnlineLesson, type InsertOnlineLesson,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -93,6 +96,20 @@ export interface IStorage {
   createAchievement(achievement: InsertAchievement): Promise<Achievement>;
   
   incrementInviteCodeUsage(code: string): Promise<void>;
+  
+  getPsychologistMessages(studentId: number): Promise<PsychologistMessage[]>;
+  getAllPsychologistChats(): Promise<{studentId: number; studentName: string; lastMessage: string; unreadCount: number}[]>;
+  createPsychologistMessage(message: InsertPsychologistMessage): Promise<PsychologistMessage>;
+  markPsychologistMessagesRead(studentId: number): Promise<void>;
+  
+  getTeacherSubjects(teacherId: number): Promise<TeacherSubject[]>;
+  setTeacherSubjects(teacherId: number, subjects: string[]): Promise<void>;
+  
+  getOnlineLessons(classId: number): Promise<OnlineLesson[]>;
+  createOnlineLesson(lesson: InsertOnlineLesson): Promise<OnlineLesson>;
+  updateOnlineLesson(id: number, data: Partial<InsertOnlineLesson>): Promise<OnlineLesson | undefined>;
+  
+  getUsersByRole(role: string): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -426,6 +443,68 @@ export class DatabaseStorage implements IStorage {
 
   async incrementInviteCodeUsage(code: string): Promise<void> {
     await db.execute(sql`UPDATE invite_codes SET used_count = COALESCE(used_count, 0) + 1 WHERE code = ${code}`);
+  }
+
+  async getPsychologistMessages(studentId: number): Promise<PsychologistMessage[]> {
+    return db.select().from(psychologistMessages).where(eq(psychologistMessages.studentId, studentId)).orderBy(psychologistMessages.createdAt);
+  }
+
+  async getAllPsychologistChats(): Promise<{studentId: number; studentName: string; lastMessage: string; unreadCount: number}[]> {
+    const result = await db.execute(sql`
+      SELECT 
+        pm.student_id,
+        CONCAT(u.last_name, ' ', u.first_name) as student_name,
+        (SELECT message FROM psychologist_messages WHERE student_id = pm.student_id ORDER BY created_at DESC LIMIT 1) as last_message,
+        COUNT(CASE WHEN pm.is_read = false AND pm.sender_id = pm.student_id THEN 1 END) as unread_count
+      FROM psychologist_messages pm
+      JOIN users u ON u.id = pm.student_id
+      GROUP BY pm.student_id, u.last_name, u.first_name
+      ORDER BY MAX(pm.created_at) DESC
+    `);
+    return (result.rows as any[]).map(row => ({
+      studentId: row.student_id,
+      studentName: row.student_name,
+      lastMessage: row.last_message || '',
+      unreadCount: parseInt(row.unread_count) || 0,
+    }));
+  }
+
+  async createPsychologistMessage(message: InsertPsychologistMessage): Promise<PsychologistMessage> {
+    const [newMessage] = await db.insert(psychologistMessages).values(message).returning();
+    return newMessage;
+  }
+
+  async markPsychologistMessagesRead(studentId: number): Promise<void> {
+    await db.update(psychologistMessages).set({ isRead: true }).where(eq(psychologistMessages.studentId, studentId));
+  }
+
+  async getTeacherSubjects(teacherId: number): Promise<TeacherSubject[]> {
+    return db.select().from(teacherSubjects).where(eq(teacherSubjects.teacherId, teacherId));
+  }
+
+  async setTeacherSubjects(teacherId: number, subjectsList: string[]): Promise<void> {
+    await db.delete(teacherSubjects).where(eq(teacherSubjects.teacherId, teacherId));
+    if (subjectsList.length > 0) {
+      await db.insert(teacherSubjects).values(subjectsList.map(name => ({ teacherId, subjectName: name })));
+    }
+  }
+
+  async getOnlineLessons(classId: number): Promise<OnlineLesson[]> {
+    return db.select().from(onlineLessons).where(eq(onlineLessons.classId, classId)).orderBy(onlineLessons.scheduledAt);
+  }
+
+  async createOnlineLesson(lesson: InsertOnlineLesson): Promise<OnlineLesson> {
+    const [newLesson] = await db.insert(onlineLessons).values(lesson).returning();
+    return newLesson;
+  }
+
+  async updateOnlineLesson(id: number, data: Partial<InsertOnlineLesson>): Promise<OnlineLesson | undefined> {
+    const [updated] = await db.update(onlineLessons).set(data).where(eq(onlineLessons.id, id)).returning();
+    return updated;
+  }
+
+  async getUsersByRole(role: string): Promise<User[]> {
+    return db.select().from(users).where(eq(users.role, role));
   }
 }
 
