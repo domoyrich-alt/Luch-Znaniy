@@ -138,3 +138,22 @@ shared/           # Shared code (schema definitions)
 - **ClassChatScreen**: Class-specific messaging with student list
 - **AdminScreen**: Hierarchical invite code generation for authorized roles
 - **ProfileScreen**: Updated with navigation buttons to new screens and real achievements from API
+
+### Multi-Class System & New Features (December 12, 2024)
+- **Class Variants**: Added А and Б variants for each grade level (9А, 9Б, 10А, 10Б, 11А, 11Б)
+- **Psychologist Chat**: PsychologistChatScreen for Telegram-style messaging with school psychologist
+- **Online Lessons**: OnlineLessonsScreen with Zoom-like video conferencing capability
+- **Teacher Subject Management**: Teachers can now select and edit their teaching subjects in ProfileScreen
+- **Enhanced Class Chat**: Support for photos, stickers, and GIFs in class messaging
+- **News Creation**: CEO and Director can create news/announcements from AnnouncementsModal
+
+### New API Endpoints (December 12, 2024)
+- Teacher Subjects: `/api/teacher-subjects/:teacherId` (GET, POST)
+- Psychologist Messages: `/api/psychologist-messages/:userId` (GET, POST)
+- Online Lessons: `/api/online-lessons/:classId` (GET, POST)
+
+### Database Schema Updates
+- `teacherSubjects`: Links teachers to their teaching subjects
+- `psychologistMessages`: Stores student-psychologist communications
+- `onlineLessons`: Stores video lesson information with meeting links
+- `chatMessages`: Extended with mediaType and mediaUrl for media attachments
