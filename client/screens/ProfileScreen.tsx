@@ -1,12 +1,13 @@
-import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, Pressable, Alert, Switch, Modal, TextInput, Platform } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, StyleSheet, ScrollView, Pressable, Alert, Switch, Modal, TextInput, Platform, ActivityIndicator } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getApiUrl, apiRequest } from "@/lib/query-client";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -56,6 +57,53 @@ export default function ProfileScreen() {
     queryKey: [`/api/achievements/${user?.id}`],
     enabled: !!user?.id,
   });
+  
+  const queryClient = useQueryClient();
+  const isTeacher = user?.role === "teacher" || user?.role === "curator" || user?.role === "psychologist";
+  
+  const { data: teacherSubjects = [] } = useQuery<{id: number; subjectName: string}[]>({
+    queryKey: [`/api/teacher-subjects/${user?.id}`],
+    enabled: !!user?.id && isTeacher,
+  });
+  
+  const [subjectsModalVisible, setSubjectsModalVisible] = useState(false);
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+  
+  const ALL_SUBJECTS = [
+    "Математика", "Русский язык", "Литература", "Английский язык", "Физика", 
+    "Химия", "Биология", "История", "Обществознание", "География", 
+    "Информатика", "Физкультура", "Музыка", "ИЗО", "Технология",
+    "ОБЖ", "Астрономия", "Экономика", "Право", "Психология"
+  ];
+  
+  useEffect(() => {
+    if (teacherSubjects.length > 0) {
+      setSelectedSubjects(teacherSubjects.map(s => s.subjectName));
+    }
+  }, [teacherSubjects]);
+  
+  const saveSubjectsMutation = useMutation({
+    mutationFn: async (subjects: string[]) => {
+      const response = await apiRequest("POST", `/api/teacher-subjects/${user?.id}`, { subjects });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/teacher-subjects/${user?.id}`] });
+      setSubjectsModalVisible(false);
+      Alert.alert("Успешно", "Предметы сохранены");
+    },
+    onError: () => {
+      Alert.alert("Ошибка", "Не удалось сохранить предметы");
+    },
+  });
+  
+  const toggleSubject = (subject: string) => {
+    setSelectedSubjects(prev => 
+      prev.includes(subject) 
+        ? prev.filter(s => s !== subject) 
+        : [...prev, subject]
+    );
+  };
 
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
@@ -157,6 +205,17 @@ export default function ProfileScreen() {
               Редактировать профиль
             </ThemedText>
           </Pressable>
+          
+          {isTeacher && (
+            <View style={styles.teacherSubjectsRow}>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Предметы: {teacherSubjects.length > 0 ? teacherSubjects.map(s => s.subjectName).join(", ") : "Не выбраны"}
+              </ThemedText>
+              <Pressable onPress={() => setSubjectsModalVisible(true)}>
+                <ThemedText type="small" style={{ color: theme.primary }}>Изменить</ThemedText>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         <View style={styles.achievementsSection}>
@@ -277,6 +336,16 @@ export default function ProfileScreen() {
                 onPress={() => navigation.navigate("ClassChat")}
               />
             )}
+            <SettingsItem
+              icon="heart"
+              label="Написать психологу"
+              onPress={() => navigation.navigate("PsychologistChat")}
+            />
+            <SettingsItem
+              icon="video"
+              label="Онлайн-уроки"
+              onPress={() => navigation.navigate("OnlineLessons")}
+            />
             {permissions.canCreateInviteCodes && (
               <SettingsItem
                 icon="key"
@@ -419,6 +488,47 @@ export default function ProfileScreen() {
             </View>
           </View>
         </Pressable>
+      </Modal>
+      
+      <Modal visible={subjectsModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.backgroundRoot }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText type="h4">Выберите предметы</ThemedText>
+              <Pressable onPress={() => setSubjectsModalVisible(false)}>
+                <Feather name="x" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+            <ScrollView style={{ maxHeight: 400 }} contentContainerStyle={{ paddingBottom: Spacing.lg }}>
+              <View style={styles.subjectsGrid}>
+                {ALL_SUBJECTS.map((subject) => (
+                  <Pressable
+                    key={subject}
+                    onPress={() => toggleSubject(subject)}
+                    style={[
+                      styles.subjectChip,
+                      {
+                        backgroundColor: selectedSubjects.includes(subject) ? theme.primary : theme.backgroundSecondary,
+                        borderColor: selectedSubjects.includes(subject) ? theme.primary : theme.border,
+                      },
+                    ]}
+                  >
+                    <ThemedText type="small" style={{ color: selectedSubjects.includes(subject) ? "#fff" : theme.text }}>
+                      {subject}
+                    </ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+            <Button 
+              onPress={() => saveSubjectsMutation.mutate(selectedSubjects)} 
+              style={{ marginTop: Spacing.md }}
+              disabled={saveSubjectsMutation.isPending}
+            >
+              {saveSubjectsMutation.isPending ? <ActivityIndicator color="#fff" /> : "Сохранить"}
+            </Button>
+          </View>
+        </View>
       </Modal>
     </ThemedView>
   );
@@ -622,5 +732,23 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
     marginBottom: Spacing.sm,
+  },
+  teacherSubjectsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+  },
+  subjectsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+  },
+  subjectChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
   },
 });

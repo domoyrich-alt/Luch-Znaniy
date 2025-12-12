@@ -5,6 +5,8 @@ import ProfileScreen from "@/screens/ProfileScreen";
 import AdminScreen from "@/screens/AdminScreen";
 import ClassChatScreen from "@/screens/ClassChatScreen";
 import LeaderboardScreen from "@/screens/LeaderboardScreen";
+import PsychologistChatScreen from "@/screens/PsychologistChatScreen";
+import OnlineLessonsScreen from "@/screens/OnlineLessonsScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type ProfileStackParamList = {
@@ -12,6 +14,8 @@ export type ProfileStackParamList = {
   Admin: undefined;
   ClassChat: undefined;
   Leaderboard: undefined;
+  PsychologistChat: undefined;
+  OnlineLessons: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -47,6 +51,20 @@ export default function ProfileStackNavigator() {
         component={LeaderboardScreen}
         options={{
           headerTitle: "Лидеры",
+        }}
+      />
+      <Stack.Screen
+        name="PsychologistChat"
+        component={PsychologistChatScreen}
+        options={{
+          headerTitle: "Психолог",
+        }}
+      />
+      <Stack.Screen
+        name="OnlineLessons"
+        component={OnlineLessonsScreen}
+        options={{
+          headerTitle: "Онлайн-уроки",
         }}
       />
     </Stack.Navigator>
