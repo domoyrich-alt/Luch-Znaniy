@@ -192,19 +192,30 @@ export default function ProfileScreen() {
               {user?.className}
             </ThemedText>
           </View>
-          <Pressable 
-            onPress={() => {
-              setFirstName(user?.firstName || "");
-              setLastName(user?.lastName || "");
-              setEditProfileVisible(true);
-            }}
-            style={[styles.editProfileButton, { borderColor: theme.border }]}
-          >
-            <Feather name="edit-2" size={14} color={theme.primary} />
-            <ThemedText type="small" style={{ color: theme.primary }}>
-              Редактировать профиль
-            </ThemedText>
-          </Pressable>
+          <View style={styles.actionButtons}>
+            <Pressable 
+              onPress={() => {
+                setFirstName(user?.firstName || "");
+                setLastName(user?.lastName || "");
+                setEditProfileVisible(true);
+              }}
+              style={[styles.actionButton, { borderColor: theme.border }]}
+            >
+              <Feather name="edit-2" size={14} color={theme.primary} />
+              <ThemedText type="small" style={{ color: theme.primary }}>
+                Редактировать
+              </ThemedText>
+            </Pressable>
+            <Pressable 
+              onPress={() => navigation.navigate("Settings")}
+              style={[styles.actionButton, { borderColor: theme.border }]}
+            >
+              <Feather name="settings" size={14} color={theme.primary} />
+              <ThemedText type="small" style={{ color: theme.primary }}>
+                Настройки
+              </ThemedText>
+            </Pressable>
+          </View>
           
           {isTeacher && (
             <View style={styles.teacherSubjectsRow}>
@@ -605,6 +616,21 @@ const styles = StyleSheet.create({
   roleBadgeText: {
     color: "#FFFFFF",
     fontWeight: "600",
+  },
+  actionButtons: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
   },
   editProfileButton: {
     flexDirection: "row",
