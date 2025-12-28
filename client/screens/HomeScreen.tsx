@@ -8,7 +8,7 @@
  * - Smooth rotate для иконок
  */
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, ScrollView, Pressable, Animated, Easing, Dimensions, StatusBar } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -25,6 +25,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useApp } from "@/context/AppContext";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
+import { Skeleton, GlassCard, Avatar, useHaptics } from "@/design-system";
 
 // НЕОНОВЫЕ ЦВЕТА
 const NEON = {
@@ -52,6 +53,10 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const { homework, events, announcements, grades, averageGrade } = useApp();
   const navigation = useNavigation();
+  const haptics = useHaptics();
+  
+  // Loading state for skeleton
+  const [isLoading, setIsLoading] = useState(true);
 
   // ========== НОВЫЕ АНИМАЦИИ ==========
   // Основные анимации для секций
@@ -73,6 +78,12 @@ export default function HomeScreen() {
   // Запускаем анимации при фокусе
   useFocusEffect(
     React.useCallback(() => {
+      // Симулируем загрузку данных
+      setIsLoading(true);
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 800);
+      
       // Сбрасываем все анимации
       fadeAnim.setValue(0);
       scaleAnim.setValue(0.8);
@@ -347,10 +358,9 @@ export default function HomeScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* ========== ПРИВЕТСТВИЕ - НЕОНОВЫЙ СТИЛЬ ========== */}
+        {/* ========== ПРИВЕТСТВИЕ - GLASSMORPHISM STYLE ========== */}
         <Animated.View 
           style={[
-            styles.neonGreeting,
             {
               opacity: fadeAnim,
               transform: [
@@ -360,97 +370,108 @@ export default function HomeScreen() {
             },
           ]}
         >
-          <View style={styles.neonAvatarWrapper}>
-            <LinearGradient
-              colors={[NEON.primary, NEON.accent, NEON.secondary]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.neonAvatarGradient}
-            >
-              <View style={styles.neonAvatarInner}>
-                <ThemedText style={styles.avatarEmoji}>👤</ThemedText>
-              </View>
-            </LinearGradient>
-          </View>
-          <View style={styles.greetingInfo}>
-            <ThemedText style={styles.neonGreetingTitle}>
-              Привет, {user?.firstName || "Пользователь"}! 👋
-            </ThemedText>
-            <View style={[styles.neonRoleBadge, { backgroundColor: getRoleColor(user?.role) + '30', borderColor: getRoleColor(user?.role) }]}>
+          <GlassCard style={styles.greetingGlassCard} withGlow>
+            <View style={styles.greetingContent}>
+              <Avatar 
+                size="lg"
+                fallback={user?.firstName || "👤"}
+                gradientColors={[NEON.primary, NEON.accent, NEON.secondary]}
+                showOnline
+              />
+              <View style={styles.greetingInfo}>
+                <ThemedText style={styles.neonGreetingTitle}>
+                  Привет, {user?.firstName || "Пользователь"}! 👋
+                </ThemedText>
+                <View style={[styles.neonRoleBadge, { backgroundColor: getRoleColor(user?.role) + '30', borderColor: getRoleColor(user?.role) }]}>
               <ThemedText style={[styles.neonRoleText, { color: getRoleColor(user?.role) }]}>
                 {getRoleEmoji(user?.role)} {getRoleLabel(user?.role)}
               </ThemedText>
+              </View>
             </View>
-          </View>
+          </GlassCard>
         </Animated.View>
 
-        {/* ========== СТАТИСТИКА - НЕОНОВЫЙ СТИЛЬ ========== */}
+        {/* ========== СТАТИСТИКА - С SKELETON LOADERS ========== */}
         {showStats && (
           <View style={styles.statsSection}>
             <Animated.View style={{ opacity: fadeAnim }}>
               <ThemedText style={styles.neonSectionTitle}>📈 Статистика</ThemedText>
             </Animated.View>
-            <View style={styles.statsGrid}>
-              {/* Средний балл */}
-              <Animated.View style={[{ width: "47%" }, getStatStyle(stat1Anim, 0)]}>
-                <View style={[styles.neonStatCard, { borderColor: NEON.primary + '40' }]}>
-                  <LinearGradient
-                    colors={[NEON.primary + '20', 'transparent']}
-                    style={styles.neonStatGradient}
-                  >
-                    <ThemedText style={styles.statEmoji}>📚</ThemedText>
-                    <ThemedText style={[styles.neonStatNumber, { color: NEON.primary }]}>
-                      {avgGrade}
-                    </ThemedText>
-                    <ThemedText style={styles.neonStatLabel}>Средний балл</ThemedText>
-                  </LinearGradient>
-                </View>
-              </Animated.View>
+            {isLoading ? (
+              // Skeleton loaders while loading
+              <View style={styles.statsGrid}>
+                {[0, 1, 2, 3].map((index) => (
+                  <View key={index} style={{ width: "47%", marginBottom: Spacing.md }}>
+                    <View style={[styles.neonStatCard, { borderColor: 'transparent' }]}>
+                      <Skeleton height={24} width={24} variant="circle" style={{ marginBottom: Spacing.sm }} />
+                      <Skeleton height={32} width={60} style={{ marginBottom: Spacing.xs }} />
+                      <Skeleton height={14} width="100%" variant="text" />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.statsGrid}>
+                {/* Средний балл */}
+                <Animated.View style={[{ width: "47%" }, getStatStyle(stat1Anim, 0)]}>
+                  <View style={[styles.neonStatCard, { borderColor: NEON.primary + '40' }]}>
+                    <LinearGradient
+                      colors={[NEON.primary + '20', 'transparent']}
+                      style={styles.neonStatGradient}
+                    >
+                      <ThemedText style={styles.statEmoji}>📚</ThemedText>
+                      <ThemedText style={[styles.neonStatNumber, { color: NEON.primary }]}>
+                        {avgGrade}
+                      </ThemedText>
+                      <ThemedText style={styles.neonStatLabel}>Средний балл</ThemedText>
+                    </LinearGradient>
+                  </View>
+                </Animated.View>
 
-              {/* Домашние задания */}
-              <Animated.View style={[{ width: "47%" }, getStatStyle(stat2Anim, 1)]}>
-                <View style={[styles.neonStatCard, { borderColor: NEON.warning + '40' }]}>
-                  <LinearGradient
-                    colors={[NEON.warning + '20', 'transparent']}
-                    style={styles.neonStatGradient}
-                  >
-                    <ThemedText style={styles.statEmoji}>📝</ThemedText>
-                    <ThemedText style={[styles.neonStatNumber, { color: NEON.warning }]}>
-                      {homeworkCount}
-                    </ThemedText>
-                    <ThemedText style={styles.neonStatLabel}>Домашних заданий</ThemedText>
-                  </LinearGradient>
-                </View>
-              </Animated.View>
+                {/* Домашние задания */}
+                <Animated.View style={[{ width: "47%" }, getStatStyle(stat2Anim, 1)]}>
+                  <View style={[styles.neonStatCard, { borderColor: NEON.warning + '40' }]}>
+                    <LinearGradient
+                      colors={[NEON.warning + '20', 'transparent']}
+                      style={styles.neonStatGradient}
+                    >
+                      <ThemedText style={styles.statEmoji}>📝</ThemedText>
+                      <ThemedText style={[styles.neonStatNumber, { color: NEON.warning }]}>
+                        {homeworkCount}
+                      </ThemedText>
+                      <ThemedText style={styles.neonStatLabel}>Домашних заданий</ThemedText>
+                    </LinearGradient>
+                  </View>
+                </Animated.View>
 
-              {/* События */}
-              <Animated.View style={[{ width: "47%" }, getStatStyle(stat3Anim, 2)]}>
-                <View style={[styles.neonStatCard, { borderColor: NEON.secondary + '40' }]}>
-                  <LinearGradient
-                    colors={[NEON.secondary + '20', 'transparent']}
-                    style={styles.neonStatGradient}
-                  >
-                    <ThemedText style={styles.statEmoji}>🎉</ThemedText>
-                    <ThemedText style={[styles.neonStatNumber, { color: NEON.secondary }]}>
-                      {eventsCount}
-                    </ThemedText>
-                    <ThemedText style={styles.neonStatLabel}>Активных событий</ThemedText>
-                  </LinearGradient>
-                </View>
-              </Animated.View>
+                {/* События */}
+                <Animated.View style={[{ width: "47%" }, getStatStyle(stat3Anim, 2)]}>
+                  <View style={[styles.neonStatCard, { borderColor: NEON.secondary + '40' }]}>
+                    <LinearGradient
+                      colors={[NEON.secondary + '20', 'transparent']}
+                      style={styles.neonStatGradient}
+                    >
+                      <ThemedText style={styles.statEmoji}>🎉</ThemedText>
+                      <ThemedText style={[styles.neonStatNumber, { color: NEON.secondary }]}>
+                        {eventsCount}
+                      </ThemedText>
+                      <ThemedText style={styles.neonStatLabel}>Активных событий</ThemedText>
+                    </LinearGradient>
+                  </View>
+                </Animated.View>
 
-              {/* Посещаемость */}
-              <Animated.View style={[{ width: "47%" }, getStatStyle(stat4Anim, 3)]}>
-                <View style={[styles.neonStatCard, { borderColor: NEON.success + '40' }]}>
-                  <LinearGradient
-                    colors={[NEON.success + '20', 'transparent']}
-                    style={styles.neonStatGradient}
-                  >
-                    <ThemedText style={styles.statEmoji}>✅</ThemedText>
-                    <ThemedText style={[styles.neonStatNumber, { color: NEON.success }]}>
-                      87%
-                    </ThemedText>
-                    <ThemedText style={styles.neonStatLabel}>Посещаемость</ThemedText>
+                {/* Посещаемость */}
+                <Animated.View style={[{ width: "47%" }, getStatStyle(stat4Anim, 3)]}>
+                  <View style={[styles.neonStatCard, { borderColor: NEON.success + '40' }]}>
+                    <LinearGradient
+                      colors={[NEON.success + '20', 'transparent']}
+                      style={styles.neonStatGradient}
+                    >
+                      <ThemedText style={styles.statEmoji}>✅</ThemedText>
+                      <ThemedText style={[styles.neonStatNumber, { color: NEON.success }]}>
+                        87%
+                      </ThemedText>
+                      <ThemedText style={styles.neonStatLabel}>Посещаемость</ThemedText>
                   </LinearGradient>
                 </View>
               </Animated.View>
@@ -538,6 +559,7 @@ export default function HomeScreen() {
                 index={index}
                 theme={theme}
                 delay={index * 50}
+                haptics={haptics}
               />
             ))}
           </View>
@@ -548,16 +570,20 @@ export default function HomeScreen() {
 }
 
 // ========== АНИМИРОВАННАЯ КАРТОЧКА ДЕЙСТВИЯ ==========
-const AnimatedActionCard = ({ action, index, theme, delay }: { 
+const AnimatedActionCard = ({ action, index, theme, delay, haptics }: { 
   action: any; 
   index: number; 
   theme: any;
   delay: number;
+  haptics: ReturnType<typeof useHaptics>;
 }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   
   const handlePressIn = () => {
+    // Trigger haptic feedback
+    haptics.light();
+    
     Animated.parallel([
       Animated.spring(scaleAnim, {
         toValue: 0.92,
@@ -894,6 +920,14 @@ const styles = StyleSheet.create({
     backgroundColor: NEON.bgCard,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  greetingGlassCard: {
+    marginBottom: 24,
+  },
+  greetingContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
   },
   greetingInfo: {
     flex: 1,
