@@ -383,9 +383,10 @@ export default function HomeScreen() {
                   Привет, {user?.firstName || "Пользователь"}! 👋
                 </ThemedText>
                 <View style={[styles.neonRoleBadge, { backgroundColor: getRoleColor(user?.role) + '30', borderColor: getRoleColor(user?.role) }]}>
-              <ThemedText style={[styles.neonRoleText, { color: getRoleColor(user?.role) }]}>
-                {getRoleEmoji(user?.role)} {getRoleLabel(user?.role)}
-              </ThemedText>
+                  <ThemedText style={[styles.neonRoleText, { color: getRoleColor(user?.role) }]}>
+                    {getRoleEmoji(user?.role)} {getRoleLabel(user?.role)}
+                  </ThemedText>
+                </View>
               </View>
             </View>
           </GlassCard>
@@ -472,10 +473,11 @@ export default function HomeScreen() {
                         87%
                       </ThemedText>
                       <ThemedText style={styles.neonStatLabel}>Посещаемость</ThemedText>
-                  </LinearGradient>
-                </View>
-              </Animated.View>
-            </View>
+                    </LinearGradient>
+                  </View>
+                </Animated.View>
+              </View>
+            )}
           </View>
         )}
 
