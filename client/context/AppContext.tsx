@@ -69,6 +69,7 @@ export interface ScheduleItem {
   room: string;
   teacher: string;
   isEvenWeek: boolean | null;
+  classId?: number;
 }
 
 export interface Subject {
@@ -106,6 +107,7 @@ interface AppContextType {
   deleteEvent: (id: string) => Promise<void>;
   announcements: Announcement[];
   addAnnouncement: (announcement: Omit<Announcement, "id" | "date" | "author">) => Promise<void>;
+  deleteAnnouncement: (id: string) => Promise<void>;
   schedule: ScheduleItem[];
   addScheduleItem: (item: Omit<ScheduleItem, "id">) => Promise<void>;
   updateScheduleItem: (id: string, item: Partial<ScheduleItem>) => Promise<void>;
@@ -562,17 +564,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const deleteAnnouncement = async (id: string) => {
+    try {
+      await apiRequest("DELETE", `/api/news/${id}`);
+      setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+    } catch (e) {
+      console.error("Failed to delete announcement:", e);
+      throw e;
+    }
+  };
+
   const addScheduleItem = async (item: Omit<ScheduleItem, "id">) => {
     try {
       const response = await apiRequest("POST", "/api/schedule", {
-        classId: user?.classId,
-        subjectId: item.subjectId,
-        teacherId: user?.id,
+        classId: item.classId || user?.classId || 1, // Фикс: используем classId из item
+        subjectId: item.subjectId || 1,
+        teacherId: user?.id || 1,
         dayOfWeek: item.day,
         startTime: item.startTime,
         endTime: item.endTime,
-        room: item.room,
+        room: item.room || "",
         isEvenWeek: item.isEvenWeek,
+        subject: item.subject,
+        teacher: item.teacher,
       });
       const newItem = await response.json();
       setSchedule((prev) => [...prev, {
@@ -664,6 +678,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteEvent,
         announcements,
         addAnnouncement,
+        deleteAnnouncement,
         schedule,
         addScheduleItem,
         updateScheduleItem,

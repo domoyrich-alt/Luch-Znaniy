@@ -16,16 +16,16 @@ import { Spacing, BorderRadius, Colors } from "@/constants/theme";
 import { useApp, MenuItem } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 
-const CATEGORY_LABELS: Record<string, { label: string; icon: string }> = {
+const CATEGORY_LABELS:  Record<string, { label: string; icon: string }> = {
   "Первые блюда": { label: "Первые блюда", icon: "droplet" },
   "Вторые блюда": { label: "Вторые блюда", icon: "box" },
   "Салаты": { label: "Салаты", icon: "feather" },
   "Напитки": { label: "Напитки", icon: "coffee" },
-  "Выпечка": { label: "Выпечка", icon: "package" },
+  "Выпечка": { label: "Выпечка", icon:  "package" },
   first: { label: "Первые блюда", icon: "droplet" },
   main: { label: "Вторые блюда", icon: "box" },
   salad: { label: "Салаты", icon: "feather" },
-  drink: { label: "Напитки", icon: "coffee" },
+  drink: { label:  "Напитки", icon:  "coffee" },
   garnish: { label: "Гарнир", icon: "layers" },
   dessert: { label: "Десерт", icon: "heart" },
   bakery: { label: "Выпечка", icon: "package" },
@@ -46,19 +46,22 @@ export default function CafeteriaScreen() {
   const [formData, setFormData] = useState({ 
     name: "", 
     category: "main" as MenuCategory,
-    description: "",
+    description:  "",
     isAvailable: true 
   });
 
-  const canManage = permissions.canEditCafeteriaMenu;
+  // ИСПРАВЛЕНО: Определяем canManage правильно для CEO
+  const canManage = permissions.canEditCafeteriaMenu || user?.role === "ceo" || user?.role === "cook";
 
   const openAddModal = () => {
+    console.log("Opening add modal"); // Для отладки
     setEditingItem(null);
     setFormData({ name: "", category: "main", description: "", isAvailable: true });
     setEditModalVisible(true);
   };
 
   const openEditModal = (item: MenuItem) => {
+    console.log("Opening edit modal for", item); // Для отладки
     setEditingItem(item);
     setFormData({ 
       name: item.name, 
@@ -70,37 +73,48 @@ export default function CafeteriaScreen() {
   };
 
   const handleSave = async () => {
-    if (!formData.name) {
+    if (!formData.name.trim()) {
       Alert.alert("Ошибка", "Введите название блюда");
       return;
     }
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (editingItem) {
-      await updateMenuItem(editingItem.id, {
-        name: formData.name,
-        category: formData.category,
-        description: formData.description,
-        price: editingItem.price,
-        isAvailable: formData.isAvailable,
-      });
-    } else {
-      await addMenuItem({
-        name: formData.name,
-        category: formData.category,
-        description: formData.description,
-        price: 0,
-        isAvailable: formData.isAvailable,
-      });
+    
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    
+    try {
+      if (editingItem) {
+        await updateMenuItem(editingItem. id, {
+          name: formData.name,
+          category: formData. category,
+          description: formData.description,
+          price: editingItem.price,
+          isAvailable: formData. isAvailable,
+        });
+      } else {
+        await addMenuItem({
+          name: formData. name,
+          category: formData.category,
+          description: formData.description,
+          price: 0, // Цену можно задать отдельно
+          isAvailable: formData.isAvailable,
+        });
+      }
+      setEditModalVisible(false);
+    } catch (error) {
+      console.error("Error saving menu item:", error);
+      Alert.alert("Ошибка", "Не удалось сохранить блюдо");
     }
-    setEditModalVisible(false);
   };
 
   const handleDelete = () => {
     if (editingItem) {
-      Alert.alert("Удалить блюдо?", "Это действие нельзя отменить", [
+      Alert.alert("Удалить блюдо? ", "Это действие нельзя отменить", [
         { text: "Отмена", style: "cancel" },
         { text: "Удалить", style: "destructive", onPress: async () => {
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          try {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          } catch {}
           await deleteMenuItem(editingItem.id);
           setEditModalVisible(false);
         }},
@@ -109,21 +123,23 @@ export default function CafeteriaScreen() {
   };
 
   const toggleItemAvailability = async (item: MenuItem) => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Haptics. impactAsync(Haptics. ImpactFeedbackStyle. Light);
+    } catch {}
     await updateMenuItem(item.id, {
-      ...item,
-      isAvailable: !item.isAvailable,
+      ... item,
+      isAvailable:  !item.isAvailable,
     });
   };
 
   const today = new Date().toLocaleDateString("ru-RU", {
     weekday: "long",
     day: "numeric",
-    month: "long",
+    month:  "long",
   });
 
   const availableItems = menuItems.filter(item => item.isAvailable);
-  const unavailableItems = menuItems.filter(item => !item.isAvailable);
+  const unavailableItems = menuItems.filter(item => ! item.isAvailable);
 
   const groupedAvailable = availableItems.reduce((acc, item) => {
     const cat = item.category;
@@ -135,7 +151,7 @@ export default function CafeteriaScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.container}>
-        <View style={[styles.emptyState, { paddingTop: headerHeight + Spacing.xl }]}>
+        <View style={[styles.emptyState, { paddingTop:  headerHeight + Spacing.xl }]}>
           <ActivityIndicator size="large" color={theme.primary} />
           <ThemedText type="body" style={{ color: theme.textSecondary, marginTop: Spacing.lg }}>
             Загрузка меню...
@@ -148,16 +164,16 @@ export default function CafeteriaScreen() {
   if (menuItems.length === 0) {
     return (
       <ThemedView style={styles.container}>
-        <View style={[styles.emptyState, { paddingTop: headerHeight + Spacing.xl }]}>
+        <View style={[styles.emptyState, { paddingTop: headerHeight + Spacing. xl }]}>
           <Feather name="coffee" size={64} color={theme.textSecondary} />
           <ThemedText type="h4" style={{ color: theme.textSecondary, textAlign: "center" }}>
             Меню пока пусто
           </ThemedText>
-          {canManage ? (
+          {canManage && (
             <Button onPress={openAddModal} style={{ marginTop: Spacing.lg }}>
               Добавить блюдо
             </Button>
-          ) : null}
+          )}
         </View>
       </ThemedView>
     );
@@ -170,7 +186,7 @@ export default function CafeteriaScreen() {
           styles.scrollContent,
           {
             paddingTop: headerHeight + Spacing.xl,
-            paddingBottom: tabBarHeight + Spacing.xl,
+            paddingBottom: tabBarHeight + Spacing. xl,
           },
         ]}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
@@ -183,21 +199,25 @@ export default function CafeteriaScreen() {
               {today}
             </ThemedText>
           </View>
-          {canManage ? (
-            <Pressable onPress={openAddModal} style={[styles.addButton, { backgroundColor: theme.primary }]}>
+          {canManage && (
+            <Pressable 
+              onPress={openAddModal} 
+              style={[styles. addButton, { backgroundColor: theme. primary }]}
+              onPressIn={() => console.log("Add button pressed")} // Для отладки
+            >
               <Feather name="plus" size={20} color="#FFFFFF" />
             </Pressable>
-          ) : null}
+          )}
         </View>
 
-        {canManage ? (
+        {canManage && (
           <Card style={styles.manageHint}>
             <Feather name="info" size={16} color={theme.primary} />
             <ThemedText type="caption" style={{ color: theme.textSecondary, flex: 1 }}>
               Используйте переключатели чтобы отметить блюда доступные сегодня
             </ThemedText>
           </Card>
-        ) : null}
+        )}
 
         {Object.entries(groupedAvailable).length > 0 ? (
           <>
@@ -205,7 +225,7 @@ export default function CafeteriaScreen() {
               Доступно сегодня
             </ThemedText>
             {Object.entries(groupedAvailable).map(([category, items]) => (
-              <View key={category} style={styles.categorySection}>
+              <View key={category} style={styles. categorySection}>
                 <ThemedText type="body" style={[styles.categoryTitle, { color: theme.textSecondary }]}>
                   {CATEGORY_LABELS[category]?.label || category}
                 </ThemedText>
@@ -216,26 +236,26 @@ export default function CafeteriaScreen() {
                         <View
                           style={[
                             styles.categoryIcon,
-                            { backgroundColor: Colors.light.success + "20" },
+                            { backgroundColor:  Colors. light. success + "20" },
                           ]}
                         >
                           <Feather
-                            name={CATEGORY_LABELS[category]?.icon as any || "circle"}
+                            name={CATEGORY_LABELS[category]?. icon as any || "circle"}
                             size={20}
                             color={Colors.light.success}
                           />
                         </View>
                         <View style={styles.menuInfo}>
                           <ThemedText type="body" style={styles.dishName}>
-                            {item.name}
+                            {item. name}
                           </ThemedText>
-                          {item.description ? (
+                          {item.description && (
                             <ThemedText type="caption" style={{ color: theme.textSecondary }} numberOfLines={2}>
                               {item.description}
                             </ThemedText>
-                          ) : null}
+                          )}
                         </View>
-                        {canManage ? (
+                        {canManage && (
                           <View style={styles.controls}>
                             <Switch
                               value={item.isAvailable}
@@ -246,7 +266,7 @@ export default function CafeteriaScreen() {
                               <Feather name="edit-2" size={16} color={theme.textSecondary} />
                             </Pressable>
                           </View>
-                        ) : null}
+                        )}
                       </View>
                     </Card>
                   ))}
@@ -263,15 +283,15 @@ export default function CafeteriaScreen() {
           </View>
         )}
 
-        {canManage && unavailableItems.length > 0 ? (
+        {canManage && unavailableItems.length > 0 && (
           <View style={styles.unavailableSection}>
-            <ThemedText type="body" style={[styles.sectionLabel, { color: theme.textSecondary }]}>
+            <ThemedText type="body" style={[styles.sectionLabel, { color: theme. textSecondary }]}>
               Недоступные блюда ({unavailableItems.length})
             </ThemedText>
             <View style={styles.menuList}>
               {unavailableItems.map((item) => (
-                <Card key={item.id} style={[styles.menuCard, styles.unavailableCard]}>
-                  <View style={styles.menuHeader}>
+                <Card key={item. id} style={[styles.menuCard, styles.unavailableCard]}>
+                  <View style={styles. menuHeader}>
                     <View
                       style={[
                         styles.categoryIcon,
@@ -293,7 +313,7 @@ export default function CafeteriaScreen() {
                       <Switch
                         value={item.isAvailable}
                         onValueChange={() => toggleItemAvailability(item)}
-                        trackColor={{ false: theme.border, true: Colors.light.success }}
+                        trackColor={{ false: theme. border, true: Colors.light. success }}
                       />
                       <Pressable onPress={() => openEditModal(item)} style={styles.editButton}>
                         <Feather name="edit-2" size={16} color={theme.textSecondary} />
@@ -304,9 +324,10 @@ export default function CafeteriaScreen() {
               ))}
             </View>
           </View>
-        ) : null}
+        )}
       </ScrollView>
 
+      {/* ИСПРАВЛЕННАЯ МОДАЛКА */}
       <Modal visible={editModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.backgroundRoot }]}>
@@ -316,29 +337,32 @@ export default function CafeteriaScreen() {
                 <Feather name="x" size={24} color={theme.text} />
               </Pressable>
             </View>
+            
             <KeyboardAwareScrollViewCompat contentContainerStyle={styles.modalForm}>
               <View style={styles.formGroup}>
                 <ThemedText type="caption" style={{ color: theme.textSecondary }}>Название блюда</ThemedText>
                 <TextInput
                   style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
-                  value={formData.name}
+                  value={formData. name}
                   onChangeText={(text) => setFormData((prev) => ({ ...prev, name: text }))}
                   placeholder="Борщ со сметаной"
-                  placeholderTextColor={theme.textSecondary}
+                  placeholderTextColor={theme. textSecondary}
                 />
               </View>
+              
               <View style={styles.formGroup}>
                 <ThemedText type="caption" style={{ color: theme.textSecondary }}>Описание</ThemedText>
                 <TextInput
-                  style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+                  style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme. border }]}
                   value={formData.description}
                   onChangeText={(text) => setFormData((prev) => ({ ...prev, description: text }))}
                   placeholder="Описание блюда"
-                  placeholderTextColor={theme.textSecondary}
+                  placeholderTextColor={theme. textSecondary}
                 />
               </View>
+              
               <View style={styles.formGroup}>
-                <ThemedText type="caption" style={{ color: theme.textSecondary }}>Категория</ThemedText>
+                <ThemedText type="caption" style={{ color:  theme.textSecondary }}>Категория</ThemedText>
                 <View style={styles.categoryButtons}>
                   {(["first", "main", "garnish", "salad", "drink", "dessert", "bakery"] as MenuCategory[]).map((cat) => (
                     <Pressable
@@ -347,7 +371,7 @@ export default function CafeteriaScreen() {
                       style={[
                         styles.categoryButton,
                         {
-                          backgroundColor: formData.category === cat ? theme.primary : theme.backgroundDefault,
+                          backgroundColor: formData.category === cat ? theme. primary : theme.backgroundDefault,
                           borderColor: formData.category === cat ? theme.primary : theme.border,
                         },
                       ]}
@@ -359,14 +383,15 @@ export default function CafeteriaScreen() {
                       />
                       <ThemedText
                         type="caption"
-                        style={{ color: formData.category === cat ? "#FFFFFF" : theme.text }}
+                        style={{ color:  formData.category === cat ? "#FFFFFF" : theme.text }}
                       >
-                        {CATEGORY_LABELS[cat]?.label || cat}
+                        {CATEGORY_LABELS[cat]?. label || cat}
                       </ThemedText>
                     </Pressable>
                   ))}
                 </View>
               </View>
+              
               <View style={styles.formGroup}>
                 <Pressable 
                   onPress={() => setFormData((prev) => ({ ...prev, isAvailable: !prev.isAvailable }))}
@@ -375,23 +400,25 @@ export default function CafeteriaScreen() {
                   <View style={[
                     styles.checkbox,
                     { 
-                      backgroundColor: formData.isAvailable ? theme.primary : theme.backgroundDefault,
+                      backgroundColor: formData. isAvailable ? theme.primary : theme.backgroundDefault,
                       borderColor: formData.isAvailable ? theme.primary : theme.border 
                     }
                   ]}>
-                    {formData.isAvailable ? <Feather name="check" size={14} color="#FFFFFF" /> : null}
+                    {formData.isAvailable && <Feather name="check" size={14} color="#FFFFFF" />}
                   </View>
                   <ThemedText type="body">Доступно сегодня</ThemedText>
                 </Pressable>
               </View>
+              
               <Button onPress={handleSave} style={{ marginTop: Spacing.lg }}>
                 {editingItem ? "Сохранить" : "Добавить"}
               </Button>
-              {editingItem ? (
-                <Button onPress={handleDelete} style={{ marginTop: Spacing.md, backgroundColor: theme.error }}>
+              
+              {editingItem && (
+                <Button onPress={handleDelete} style={{ marginTop:  Spacing.md, backgroundColor: theme.error }}>
                   Удалить блюдо
                 </Button>
-              ) : null}
+              )}
             </KeyboardAwareScrollViewCompat>
           </View>
         </View>
@@ -405,16 +432,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing. lg,
   },
   emptyState: {
-    flex: 1,
+    flex:  1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: Spacing["2xl"],
     gap: Spacing.lg,
   },
-  header: {
+  header:  {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -427,10 +454,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  manageHint: {
+  manageHint:  {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    gap: Spacing. sm,
     padding: Spacing.md,
     marginBottom: Spacing.xl,
   },
@@ -441,10 +468,10 @@ const styles = StyleSheet.create({
   noAvailable: {
     alignItems: "center",
     padding: Spacing["2xl"],
-    gap: Spacing.md,
+    gap:  Spacing.md,
   },
   categorySection: {
-    marginBottom: Spacing.xl,
+    marginBottom:  Spacing.xl,
   },
   categoryTitle: {
     marginBottom: Spacing.sm,
@@ -477,10 +504,10 @@ const styles = StyleSheet.create({
   dishName: {
     fontWeight: "600",
   },
-  controls: {
+  controls:  {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    gap: Spacing. sm,
   },
   editButton: {
     padding: Spacing.xs,
@@ -503,22 +530,22 @@ const styles = StyleSheet.create({
     maxHeight: "85%",
   },
   modalHeader: {
-    flexDirection: "row",
+    flexDirection:  "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: Spacing.xl,
   },
   modalForm: {
-    gap: Spacing.md,
+    gap:  Spacing.md,
     paddingBottom: Spacing.xl,
   },
   formGroup: {
     gap: Spacing.xs,
   },
-  input: {
-    height: Spacing.inputHeight,
+  input:  {
+    height:  Spacing.inputHeight,
     borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing. lg,
     fontSize: 16,
     borderWidth: 1,
   },
@@ -532,14 +559,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.xs,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingVertical:  Spacing.sm,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
   },
-  availabilityRow: {
+  availabilityRow:  {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.md,
+    gap: Spacing. md,
     paddingVertical: Spacing.sm,
   },
   checkbox: {

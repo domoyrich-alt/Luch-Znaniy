@@ -1,8 +1,7 @@
-import { ScrollView, View } from "react-native";
+import { ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 
-import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing } from "@/constants/theme";
 
@@ -20,10 +19,6 @@ export default function ModalScreen() {
         paddingHorizontal: Spacing.lg,
       }}
       scrollIndicatorInsets={{ bottom: insets.bottom }}
-    >
-      <View>
-        <ThemedText type="body">Modal content</ThemedText>
-      </View>
-    </ScrollView>
+    />
   );
 }

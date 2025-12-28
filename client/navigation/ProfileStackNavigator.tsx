@@ -1,70 +1,110 @@
 import React from "react";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-
+import { createStackNavigator } from "@react-navigation/stack";
 import ProfileScreen from "@/screens/ProfileScreen";
-import AdminScreen from "@/screens/AdminScreen";
-import ClassChatScreen from "@/screens/ClassChatScreen";
-import LeaderboardScreen from "@/screens/LeaderboardScreen";
-import PsychologistChatScreen from "@/screens/PsychologistChatScreen";
-import OnlineLessonsScreen from "@/screens/OnlineLessonsScreen";
-import { useScreenOptions } from "@/hooks/useScreenOptions";
+import SettingsScreen from "@/screens/SettingsScreen";
+import EditProfileScreen from "@/screens/EditProfileScreen";
+import PrivacySettingsScreen from "@/screens/PrivacySettingsScreen";
+import NotificationSettingsScreen from "@/screens/NotificationSettingsScreen";
+import AppearanceSettingsScreen from "@/screens/AppearanceSettingsScreen";
+import BlockedUsersScreen from "@/screens/BlockedUsersScreen";
+import TeacherJournalScreen from "@/screens/TeacherJournalScreen";
+import GradesScreen from "@/screens/GradesScreen";
+import ClassListScreen from "@/screens/ClassListScreen";
+import { useTheme } from "@/hooks/useTheme";
 
 export type ProfileStackParamList = {
   Profile: undefined;
-  Admin: undefined;
-  ClassChat: undefined;
-  Leaderboard: undefined;
-  PsychologistChat: undefined;
-  OnlineLessons: undefined;
+  Settings: undefined;
+  EditProfile: undefined;
+  PrivacySettings: undefined;
+  NotificationSettings: undefined;
+  AppearanceSettings: undefined;
+  BlockedUsers: undefined;
+  TeacherJournal: undefined;
+  Grades: undefined;
+  ClassList: undefined;
 };
 
-const Stack = createNativeStackNavigator<ProfileStackParamList>();
+const Stack = createStackNavigator<ProfileStackParamList>();
 
 export default function ProfileStackNavigator() {
-  const screenOptions = useScreenOptions();
+  const { theme } = useTheme();
 
   return (
-    <Stack.Navigator screenOptions={screenOptions}>
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        cardStyle: { backgroundColor: theme.backgroundRoot },
+      }}
+    >
       <Stack.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
-          headerTitle: "Профиль",
+          headerShown: false,
         }}
       />
       <Stack.Screen
-        name="Admin"
-        component={AdminScreen}
+        name="Settings"
+        component={SettingsScreen}
         options={{
-          headerTitle: "Управление",
+          headerShown: false,
         }}
       />
       <Stack.Screen
-        name="ClassChat"
-        component={ClassChatScreen}
+        name="EditProfile"
+        component={EditProfileScreen}
         options={{
-          headerTitle: "Чат класса",
+          headerShown: false,
         }}
       />
       <Stack.Screen
-        name="Leaderboard"
-        component={LeaderboardScreen}
+        name="PrivacySettings"
+        component={PrivacySettingsScreen}
         options={{
-          headerTitle: "Лидеры",
+          headerShown: false,
         }}
       />
       <Stack.Screen
-        name="PsychologistChat"
-        component={PsychologistChatScreen}
+        name="NotificationSettings"
+        component={NotificationSettingsScreen}
         options={{
-          headerTitle: "Психолог",
+          headerShown: false,
         }}
       />
       <Stack.Screen
-        name="OnlineLessons"
-        component={OnlineLessonsScreen}
+        name="AppearanceSettings"
+        component={AppearanceSettingsScreen}
         options={{
-          headerTitle: "Онлайн-уроки",
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="BlockedUsers"
+        component={BlockedUsersScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="TeacherJournal"
+        component={TeacherJournalScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="Grades"
+        component={GradesScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="ClassList"
+        component={ClassListScreen}
+        options={{
+          headerShown: false,
         }}
       />
     </Stack.Navigator>

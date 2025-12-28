@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
@@ -9,35 +11,24 @@ const log = console.log;
 
 declare module "http" {
   interface IncomingMessage {
-    rawBody: unknown;
+    rawBody:  unknown;
   }
 }
 
 function setupCors(app: express.Application) {
   app.use((req, res, next) => {
-    const origins = new Set<string>();
-
-    if (process.env.REPLIT_DEV_DOMAIN) {
-      origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
-    }
-
-    if (process.env.REPLIT_DOMAINS) {
-      process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
-        origins.add(`https://${d.trim()}`);
-      });
-    }
-
+    // Разрешаем все origins в development режиме
     const origin = req.header("origin");
-
-    if (origin && origins.has(origin)) {
+    
+    if (origin) {
       res.header("Access-Control-Allow-Origin", origin);
-      res.header(
-        "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS",
-      );
-      res.header("Access-Control-Allow-Headers", "Content-Type");
-      res.header("Access-Control-Allow-Credentials", "true");
+    } else {
+      res.header("Access-Control-Allow-Origin", "*");
     }
+    
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, expo-platform");
+    res.header("Access-Control-Allow-Credentials", "true");
 
     if (req.method === "OPTIONS") {
       return res.sendStatus(200);
@@ -62,29 +53,24 @@ function setupBodyParsing(app: express.Application) {
 function setupRequestLogging(app: express.Application) {
   app.use((req, res, next) => {
     const start = Date.now();
-    const path = req.path;
-    let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
+    const reqPath = req.path;
+    let capturedJsonResponse:  Record<string, unknown> | undefined = undefined;
 
     const originalResJson = res.json;
-    res.json = function (bodyJson, ...args) {
+    res.json = function (bodyJson, ... args) {
       capturedJsonResponse = bodyJson;
       return originalResJson.apply(res, [bodyJson, ...args]);
     };
 
     res.on("finish", () => {
-      if (!path.startsWith("/api")) return;
-
       const duration = Date.now() - start;
-
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      let logLine = `${req.method} ${reqPath} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse && reqPath. startsWith("/api")) {
+        logLine += ` ::  ${JSON.stringify(capturedJsonResponse)}`;
       }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
+      if (logLine. length > 120) {
+        logLine = logLine.slice(0, 119) + "…";
       }
-
       log(logLine);
     });
 
@@ -97,7 +83,7 @@ function getAppName(): string {
     const appJsonPath = path.resolve(process.cwd(), "app.json");
     const appJsonContent = fs.readFileSync(appJsonPath, "utf-8");
     const appJson = JSON.parse(appJsonContent);
-    return appJson.expo?.name || "App Landing Page";
+    return appJson.expo?. name || "App Landing Page";
   } catch {
     return "App Landing Page";
   }
@@ -111,7 +97,7 @@ function serveExpoManifest(platform: string, res: Response) {
     "manifest.json",
   );
 
-  if (!fs.existsSync(manifestPath)) {
+  if (! fs.existsSync(manifestPath)) {
     return res
       .status(404)
       .json({ error: `Manifest not found for platform: ${platform}` });
@@ -130,7 +116,7 @@ function serveLandingPage({
   res,
   landingPageTemplate,
   appName,
-}: {
+}:  {
   req: Request;
   res: Response;
   landingPageTemplate: string;
@@ -139,7 +125,7 @@ function serveLandingPage({
   const forwardedProto = req.header("x-forwarded-proto");
   const protocol = forwardedProto || req.protocol || "https";
   const forwardedHost = req.header("x-forwarded-host");
-  const host = forwardedHost || req.get("host");
+  const host = forwardedHost || req. get("host");
   const baseUrl = `${protocol}://${host}`;
   const expsUrl = `${host}`;
 
@@ -162,12 +148,19 @@ function configureExpoAndLanding(app: express.Application) {
     "templates",
     "landing-page.html",
   );
-  const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
+  
+  let landingPageTemplate = "<html><body><h1>App</h1></body></html>";
+  try {
+    landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
+  } catch (e) {
+    log("Landing page template not found, using default");
+  }
+  
   const appName = getAppName();
 
   log("Serving static Expo files with dynamic manifest routing");
 
-  app.use((req: Request, res: Response, next: NextFunction) => {
+  app.use((req:  Request, res: Response, next:  NextFunction) => {
     if (req.path.startsWith("/api")) {
       return next();
     }
@@ -196,7 +189,7 @@ function configureExpoAndLanding(app: express.Application) {
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
-  log("Expo routing: Checking expo-platform header on / and /manifest");
+  log("Expo routing:  Checking expo-platform header on / and /manifest");
 }
 
 function setupErrorHandler(app: express.Application) {
@@ -204,15 +197,14 @@ function setupErrorHandler(app: express.Application) {
     const error = err as {
       status?: number;
       statusCode?: number;
-      message?: string;
+      message?:  string;
     };
 
     const status = error.status || error.statusCode || 500;
     const message = error.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-
-    throw err;
+    log(`Error: ${message}`);
+    res.status(status).json({ error: message });
   });
 }
 
@@ -231,8 +223,7 @@ function setupErrorHandler(app: express.Application) {
   server.listen(
     {
       port,
-      host: "0.0.0.0",
-      reusePort: true,
+      host:  "0.0.0.0",
     },
     () => {
       log(`express server serving on port ${port}`);

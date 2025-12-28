@@ -184,9 +184,123 @@ export const achievements = pgTable("achievements", {
   earnedAt: timestamp("earned_at").defaultNow(),
 });
 
-export const insertClassSchema = createInsertSchema(classes).omit({ id: true, createdAt: true });
+// ТИПЫ ДОСТИЖЕНИЙ (шаблоны)
+export const achievementTypes = pgTable("achievement_types", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(), // 'perfect_attendance', 'top_student', etc.
+  name: text("name").notNull(),
+  description: text("description"),
+  emoji: text("emoji").notNull(),
+  category: text("category").notNull().default("general"), // 'academic', 'social', 'attendance', 'special'
+  requirement: integer("requirement").notNull().default(1), // сколько нужно для получения
+  xpReward: integer("xp_reward").notNull().default(10),
+  rarity: text("rarity").notNull().default("common"), // 'common', 'rare', 'epic', 'legendary'
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ПРОГРЕСС ДОСТИЖЕНИЙ
+export const achievementProgress = pgTable("achievement_progress", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  achievementTypeId: integer("achievement_type_id").notNull().references(() => achievementTypes.id),
+  currentProgress: integer("current_progress").notNull().default(0),
+  isCompleted: boolean("is_completed").default(false),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// СВЯЗЬ РОДИТЕЛЬ-РЕБЁНОК
+export const parentChildren = pgTable("parent_children", {
+  id: serial("id").primaryKey(),
+  parentId: integer("parent_id").notNull().references(() => users.id),
+  childId: integer("child_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("pending"), // 'pending', 'approved', 'rejected'
+  verificationCode: text("verification_code"),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// НОВЫЕ ТАБЛИЦЫ ДЛЯ ПРИВАТНЫХ ЧАТОВ
+export const userProfiles = pgTable("user_profiles", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id),
+  username: text("username").notNull().unique(),
+  bio: text("bio"),
+  avatarUrl: text("avatar_url"),
+  phoneNumber: text("phone_number"),
+  birthday: text("birthday"),
+  favoriteMusic: text("favorite_music"),
+  status: text("status"),
+  isOnline: boolean("is_online").default(false),
+  lastSeenAt: timestamp("last_seen_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const privateChats = pgTable("private_chats", {
+  id: serial("id").primaryKey(),
+  user1Id: integer("user1_id").notNull().references(() => users.id),
+  user2Id: integer("user2_id").notNull().references(() => users.id),
+  lastMessageAt: timestamp("last_message_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const privateMessages = pgTable("private_messages", {
+  id: serial("id").primaryKey(),
+  chatId: integer("chat_id").notNull().references(() => privateChats.id),
+  senderId: integer("sender_id").notNull().references(() => users.id),
+  message: text("message"),
+  mediaType: text("media_type"), // 'photo', 'video', 'file'
+  mediaUrl: text("media_url"),
+  mediaFileName: text("media_file_name"),
+  mediaSize: integer("media_size"), // в байтах
+  isRead: boolean("is_read").default(false),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ТАБЛИЦА ДРУЗЕЙ
+export const friendships = pgTable("friendships", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  friendId: integer("friend_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("pending"), // 'pending', 'accepted', 'declined', 'blocked'
+  createdAt: timestamp("created_at").defaultNow(),
+  acceptedAt: timestamp("accepted_at"),
+});
+
+// ТАБЛИЦА ПОДАРКОВ
+export const giftTypes = pgTable("gift_types", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  emoji: text("emoji").notNull(),
+  price: integer("price").notNull(),
+  rarity: text("rarity").notNull().default("common"), // 'common', 'rare', 'legendary', 'epic'
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ОТПРАВЛЕННЫЕ ПОДАРКИ
+export const sentGifts = pgTable("sent_gifts", {
+  id: serial("id").primaryKey(),
+  senderId: integer("sender_id").notNull().references(() => users.id),
+  receiverId: integer("receiver_id").notNull().references(() => users.id),
+  giftTypeId: integer("gift_type_id").notNull().references(() => giftTypes.id),
+  message: text("message"),
+  isAnonymous: boolean("is_anonymous").default(false),
+  isOpened: boolean("is_opened").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  openedAt: timestamp("opened_at"),
+});
+
+export const insertAchievementSchema = createInsertSchema(achievements).omit({ id: true, earnedAt: true });
+export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true, createdAt: true, lastSeenAt: true });
+export const insertPrivateChatSchema = createInsertSchema(privateChats).omit({ id: true, createdAt: true, lastMessageAt: true });
+export const insertPrivateMessageSchema = createInsertSchema(privateMessages).omit({ id: true, createdAt: true, readAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertInviteCodeSchema = createInsertSchema(inviteCodes).omit({ id: true, createdAt: true });
+export const insertClassSchema = createInsertSchema(classes).omit({ id: true, createdAt: true });
 export const insertSubjectSchema = createInsertSchema(subjects).omit({ id: true, createdAt: true });
 export const insertGradeSchema = createInsertSchema(grades).omit({ id: true, createdAt: true });
 export const insertHomeworkSchema = createInsertSchema(homework).omit({ id: true, createdAt: true });
@@ -197,10 +311,15 @@ export const insertNewsSchema = createInsertSchema(news).omit({ id: true, create
 export const insertCafeteriaMenuSchema = createInsertSchema(cafeteriaMenu).omit({ id: true, createdAt: true });
 export const insertAttendanceSchema = createInsertSchema(attendance).omit({ id: true, createdAt: true });
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
-export const insertAchievementSchema = createInsertSchema(achievements).omit({ id: true, earnedAt: true });
 export const insertPsychologistMessageSchema = createInsertSchema(psychologistMessages).omit({ id: true, createdAt: true });
 export const insertTeacherSubjectSchema = createInsertSchema(teacherSubjects).omit({ id: true, createdAt: true });
 export const insertOnlineLessonSchema = createInsertSchema(onlineLessons).omit({ id: true, createdAt: true });
+export const insertFriendshipSchema = createInsertSchema(friendships).omit({ id: true, createdAt: true, acceptedAt: true });
+export const insertGiftTypeSchema = createInsertSchema(giftTypes).omit({ id: true, createdAt: true });
+export const insertSentGiftSchema = createInsertSchema(sentGifts).omit({ id: true, createdAt: true, openedAt: true });
+export const insertAchievementTypeSchema = createInsertSchema(achievementTypes).omit({ id: true, createdAt: true });
+export const insertAchievementProgressSchema = createInsertSchema(achievementProgress).omit({ id: true, createdAt: true, completedAt: true });
+export const insertParentChildSchema = createInsertSchema(parentChildren).omit({ id: true, createdAt: true, approvedAt: true });
 
 export type Class = typeof classes.$inferSelect;
 export type InsertClass = z.infer<typeof insertClassSchema>;
@@ -236,3 +355,21 @@ export type TeacherSubject = typeof teacherSubjects.$inferSelect;
 export type InsertTeacherSubject = z.infer<typeof insertTeacherSubjectSchema>;
 export type OnlineLesson = typeof onlineLessons.$inferSelect;
 export type InsertOnlineLesson = z.infer<typeof insertOnlineLessonSchema>;
+export type UserProfile = typeof userProfiles.$inferSelect;
+export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
+export type PrivateChat = typeof privateChats.$inferSelect;
+export type InsertPrivateChat = z.infer<typeof insertPrivateChatSchema>;
+export type PrivateMessage = typeof privateMessages.$inferSelect;
+export type InsertPrivateMessage = z.infer<typeof insertPrivateMessageSchema>;
+export type Friendship = typeof friendships.$inferSelect;
+export type InsertFriendship = z.infer<typeof insertFriendshipSchema>;
+export type GiftType = typeof giftTypes.$inferSelect;
+export type InsertGiftType = z.infer<typeof insertGiftTypeSchema>;
+export type SentGift = typeof sentGifts.$inferSelect;
+export type InsertSentGift = z.infer<typeof insertSentGiftSchema>;
+export type AchievementType = typeof achievementTypes.$inferSelect;
+export type InsertAchievementType = z.infer<typeof insertAchievementTypeSchema>;
+export type AchievementProgress = typeof achievementProgress.$inferSelect;
+export type InsertAchievementProgress = z.infer<typeof insertAchievementProgressSchema>;
+export type ParentChild = typeof parentChildren.$inferSelect;
+export type InsertParentChild = z.infer<typeof insertParentChildSchema>;

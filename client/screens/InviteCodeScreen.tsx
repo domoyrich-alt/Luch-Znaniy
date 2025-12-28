@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { View, StyleSheet, TextInput, Pressable, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -23,7 +22,6 @@ const ROLES: { key: UserRole; label: string; icon: string; color: string }[] = [
 
 export default function InviteCodeScreen() {
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const { login, isLoading, error } = useAuth();
 
@@ -34,12 +32,16 @@ export default function InviteCodeScreen() {
   const [localError, setLocalError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
+    if (!firstName.trim()) {
+      setLocalError("Введите ваше имя");
+      return;
+    }
     if (!inviteCode.trim()) {
       setLocalError("Введите код приглашения");
       return;
     }
     setLocalError(null);
-    await login(inviteCode.toUpperCase(), selectedRole, firstName.trim() || "Пользователь", lastName.trim() || "");
+    await login(inviteCode.toUpperCase(), selectedRole, firstName.trim(), lastName.trim());
   };
 
   const displayError = localError || error;
@@ -50,7 +52,7 @@ export default function InviteCodeScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: headerHeight + Spacing.xl,
+            paddingTop: insets.top + Spacing.xl,
             paddingBottom: insets.bottom + Spacing.xl,
           },
         ]}
@@ -89,7 +91,7 @@ export default function InviteCodeScreen() {
           </View>
           <View style={styles.nameField}>
             <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
-              Фамилия *
+              Фамилия
             </ThemedText>
             <TextInput
               style={[
@@ -97,10 +99,10 @@ export default function InviteCodeScreen() {
                 {
                   backgroundColor: theme.backgroundDefault,
                   color: theme.text,
-                  borderColor: !lastName.trim() && displayError ? Colors.light.error : theme.border,
+                  borderColor: theme.border,
                 },
               ]}
-              placeholder="Ваша фамилия"
+              placeholder="Необязательно"
               placeholderTextColor={theme.textSecondary}
               value={lastName}
               onChangeText={(text) => {

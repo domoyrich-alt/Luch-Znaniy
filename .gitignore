@@ -33,6 +33,14 @@ yarn-error.*
 # local env files
 .env*.local
 
+# env (do not commit secrets)
+.env
+.env.*
+!.env.example
+
+# local scratch/runtime
+.local/
+
 # typescript
 *.tsbuildinfo
 

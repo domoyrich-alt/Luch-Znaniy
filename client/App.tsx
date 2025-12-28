@@ -1,55 +1,49 @@
-import React from "react";
-import { StyleSheet } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
-import { SafeAreaProvider } from "react-native-safe-area-context";
-import { StatusBar } from "expo-status-bar";
+import React, { useEffect, useRef } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 
-import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient } from "@/lib/query-client";
+// ИСПРАВЛЕНО: убираем ./client/ и используем @/ алиасы
+import { AuthProvider } from '@/context/AuthContext';
+import { AppProvider } from '@/context/AppContext';
+import { ThemeProvider } from '@/context/ThemeContext';
+import { SettingsProvider } from '@/context/SettingsContext';
+import { StarsProvider } from '@/context/StarsContext';
+import RootStackNavigator from '@/navigation/RootStackNavigator';
+import { NotificationService } from '@/utils/NotificationService';
+import { queryClient } from '@/lib/query-client';
 
-import RootStackNavigator from "@/navigation/RootStackNavigator";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { AuthProvider } from "@/context/AuthContext";
-import { AppProvider } from "@/context/AppContext";
-import { ThemeProvider, useThemeContext } from "@/context/ThemeContext";
+export default function App() {
+  useEffect(() => {
+    // Регистрируем уведомления при запуске
+    NotificationService.registerForPushNotificationsAsync();
+    
+    // Настраиваем ежедневные напоминания
+    NotificationService.scheduleDailyReminders();
 
-function AppContent() {
-  const { isDark } = useThemeContext();
-  
+    console.log('📱 Приложение запущено! ');
+  }, []);
+
   return (
     <SafeAreaProvider>
-      <GestureHandlerRootView style={styles.root}>
-        <KeyboardProvider>
-          <NavigationContainer>
-            <RootStackNavigator />
-          </NavigationContainer>
-          <StatusBar style={isDark ? "light" : "dark"} />
-        </KeyboardProvider>
-      </GestureHandlerRootView>
+      <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <SettingsProvider>
+              <AuthProvider>
+                <AppProvider>
+                  <StarsProvider>
+                    <NavigationContainer>
+                      <RootStackNavigator />
+                    </NavigationContainer>
+                  </StarsProvider>
+                </AppProvider>
+              </AuthProvider>
+            </SettingsProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }
-
-export default function App() {
-  return (
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <AuthProvider>
-            <AppProvider>
-              <AppContent />
-            </AppProvider>
-          </AuthProvider>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
-  );
-}
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-});

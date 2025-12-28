@@ -20,6 +20,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useApp } from "@/context/AppContext";
+import { useStars } from "@/context/StarsContext";
 
 const CUTOFF_HOUR = 9;
 const CUTOFF_MINUTE = 5;
@@ -31,6 +32,7 @@ export default function CheckInScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
   const { todayAttendance, markAttendance, classStudents, markStudentAttendance, markAllStudentsPresent, attendanceStats } = useApp();
+  const { earnStars } = useStars();
 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,9 +57,16 @@ export default function CheckInScreen() {
       withSpring(1.05),
       withSpring(1)
     );
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    await markAttendance(isLate ? "late" : "present");
-    setIsSubmitting(false);
+    try {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await markAttendance(isLate ? "late" : "present");
+      earnStars(isLate ? 2 : 3, "Посещаемость");
+    } catch (error) {
+      Alert.alert("Ошибка", "Не удалось отметить посещаемость");
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const animatedButtonStyle = useAnimatedStyle(() => ({
