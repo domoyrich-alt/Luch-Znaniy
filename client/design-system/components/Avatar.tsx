@@ -3,7 +3,7 @@
  * Avatar component with gradient border and online status
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Image, ViewStyle, StyleProp } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Spacing } from '../tokens/spacing';
@@ -50,8 +50,14 @@ export function Avatar({
     return text.substring(0, 2).toUpperCase();
   };
 
-  const isEmoji = /\p{Emoji}/u.test(fallback);
-  const initials = isEmoji ? fallback : getInitials(fallback);
+  // Memoize emoji check to avoid repeated regex evaluations
+  const { isEmoji, initials } = useMemo(() => {
+    const emojiCheck = /\p{Emoji}/u.test(fallback);
+    return {
+      isEmoji: emojiCheck,
+      initials: emojiCheck ? fallback : getInitials(fallback),
+    };
+  }, [fallback]);
 
   return (
     <View style={[{ width: avatarSize, height: avatarSize }, style]}>

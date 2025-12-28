@@ -25,7 +25,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useApp } from "@/context/AppContext";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
-import { Skeleton, GlassCard, Avatar, useHaptics } from "@/design-system";
+import { Skeleton, GlassCard, Avatar, useHaptics, RoleBadgeColors } from "@/design-system";
 
 // НЕОНОВЫЕ ЦВЕТА
 const NEON = {
@@ -55,8 +55,24 @@ export default function HomeScreen() {
   const navigation = useNavigation();
   const haptics = useHaptics();
   
-  // Loading state for skeleton
+  // Loading state based on data availability
+  // Show skeleton if key data (homework, events, grades) is not yet loaded
   const [isLoading, setIsLoading] = useState(true);
+
+  // Check if data is loaded
+  useEffect(() => {
+    // If we have user data, consider it loaded
+    // In a real app, this would check for actual data fetching state
+    const dataLoaded = user !== null;
+    
+    if (dataLoaded && isLoading) {
+      // Add a small delay for smooth transition
+      const timer = setTimeout(() => {
+        setIsLoading(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [user, isLoading]);
 
   // ========== НОВЫЕ АНИМАЦИИ ==========
   // Основные анимации для секций
@@ -78,12 +94,6 @@ export default function HomeScreen() {
   // Запускаем анимации при фокусе
   useFocusEffect(
     React.useCallback(() => {
-      // Симулируем загрузку данных
-      setIsLoading(true);
-      setTimeout(() => {
-        setIsLoading(false);
-      }, 800);
-      
       // Сбрасываем все анимации
       fadeAnim.setValue(0);
       scaleAnim.setValue(0.8);
@@ -652,14 +662,8 @@ const AnimatedActionCard = ({ action, index, theme, delay, haptics }: {
 
 // ========== HELPER FUNCTIONS ==========
 function getRoleColor(role?: string) {
-  switch (role) {
-    case "ceo": return Colors.light.error;
-    case "director": return Colors.light.warning;
-    case "teacher": return Colors.light.success;
-    case "student": return Colors.light.secondary;
-    case "parent": return Colors.light.primary;
-    default: return Colors.light.secondary;
-  }
+  // Use design system RoleBadgeColors for consistency
+  return RoleBadgeColors[role || 'student'] || RoleBadgeColors.student;
 }
 
 function getRoleLabel(role?: string) {
