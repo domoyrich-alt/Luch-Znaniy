@@ -123,26 +123,48 @@ export function MessageBubble({
         const duration = getMediaDuration();
         return (
           <View style={styles.voiceMessage}>
-            <Pressable style={styles.playButton}>
-              <Feather name="play" size={18} color={isOwn ? '#fff' : theme.primary} />
+            <Pressable style={[styles.voicePlayButton, { backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : theme.primary }]}>
+              <Feather name="play" size={16} color="#fff" style={{ marginLeft: 2 }} />
             </Pressable>
-            <View style={styles.waveform}>
-              {[...Array(20)].map((_, i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.waveformBar,
-                    { 
-                      height: Math.random() * 20 + 5, 
-                      backgroundColor: isOwn ? 'rgba(255,255,255,0.6)' : theme.primary + '60' 
-                    },
-                  ]}
-                />
-              ))}
+            <View style={styles.voiceWaveformContainer}>
+              <View style={styles.waveform}>
+                {[...Array(30)].map((_, i) => {
+                  const height = Math.sin(i * 0.5) * 8 + Math.random() * 6 + 6;
+                  return (
+                    <View
+                      key={i}
+                      style={[
+                        styles.waveformBar,
+                        { 
+                          height, 
+                          backgroundColor: isOwn ? 'rgba(255,255,255,0.6)' : theme.primary
+                        },
+                      ]}
+                    />
+                  );
+                })}
+              </View>
+              <ThemedText style={[styles.duration, { color: isOwn ? 'rgba(255,255,255,0.8)' : theme.textSecondary }]}>
+                {duration ? `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}` : '0:00'}
+              </ThemedText>
             </View>
-            <ThemedText style={[styles.duration, { color: isOwn ? 'rgba(255,255,255,0.7)' : theme.textSecondary }]}>
-              {duration ? `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}` : '0:00'}
-            </ThemedText>
+          </View>
+        );
+
+      case 'video':
+        const videoDuration = getMediaDuration();
+        const durationText = `${Math.floor(videoDuration / 60)}:${(videoDuration % 60).toString().padStart(2, '0')}`;
+        return (
+          <View style={styles.videoNoteContainer}>
+            <View style={styles.videoNoteCircle}>
+              <Image source={{ uri: getMediaUrl() }} style={styles.videoNoteThumbnail} resizeMode="cover" />
+              <View style={styles.videoPlayOverlay}>
+                <Feather name="play" size={28} color="#fff" />
+              </View>
+            </View>
+            <View style={styles.videoNoteDuration}>
+              <ThemedText style={styles.videoNoteDurationText}>{durationText}</ThemedText>
+            </View>
           </View>
         );
 
@@ -367,32 +389,70 @@ const styles = StyleSheet.create({
   voiceMessage: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    minWidth: 180,
+    gap: 10,
+    minWidth: 200,
+    paddingVertical: 2,
   },
-  playButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.1)',
+  voicePlayButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  waveform: {
+  voiceWaveformContainer: {
     flex: 1,
+  },
+  waveform: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    height: 30,
+    height: 26,
   },
   waveformBar: {
-    width: 3,
-    borderRadius: 2,
+    width: 2.5,
+    borderRadius: 1.5,
   },
   duration: {
     fontSize: 12,
-    minWidth: 35,
-    textAlign: 'right',
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  // Video Note (круглое видео)
+  videoNoteContainer: {
+    marginVertical: 4,
+    position: 'relative',
+  },
+  videoNoteCircle: {
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  videoNoteThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  videoPlayOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  videoNoteDuration: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  videoNoteDurationText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   imageContainer: {
     borderRadius: 8,

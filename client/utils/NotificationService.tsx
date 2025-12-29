@@ -6,6 +6,8 @@ import { Platform } from 'react-native';
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
@@ -21,7 +23,7 @@ export class NotificationService {
 
   // Регистрация для push-уведомлений
   static async registerForPushNotificationsAsync(): Promise<string | null> {
-    let token;
+    let token: string | null = null;
 
     if (Platform. OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
@@ -165,6 +167,7 @@ export class NotificationService {
         data: { type: 'daily_motivation' },
       },
       trigger:  {
+        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
         hour: 8,
         minute: 0,
         repeats: true,
@@ -179,6 +182,7 @@ export class NotificationService {
         data: { type: 'homework_reminder' },
       },
       trigger:  {
+        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
         hour:  19,
         minute: 0,
         repeats:  true,

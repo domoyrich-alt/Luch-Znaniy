@@ -15,7 +15,7 @@ import { Spacing, BorderRadius, Colors } from "@/constants/theme";
 import { useApp, Event } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 
-type EventType = "school" | "class" | "optional";
+type EventType = "school" | "class" | "optional" | "event";
 
 export default function EventsModal() {
   const headerHeight = useHeaderHeight();

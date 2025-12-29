@@ -1,466 +1,192 @@
-/**
- * TELEGRAM-STYLE OPTIMIZED CHAT LIST ITEM
- * 
- * Особенности:
- * - Плотный двухколоночный макет
- * - Свайп-жесты
- * - Оптимизация для виртуализированного списка
- * - Минимум перерисовок
- */
-
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   View, 
+  Text, 
   StyleSheet, 
+  FlatList, 
   Pressable, 
   Animated, 
-  PanResponder,
-  Dimensions,
+  PanResponder, 
+  TextInput, 
+  RefreshControl, 
+  Dimensions 
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-
-import { ThemedText } from '@/components/ThemedText';
-import { useTheme } from '@/hooks/useTheme';
-import { Chat, MessageStatus } from '@/store/ChatStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const ITEM_HEIGHT = 76;
 const SWIPE_THRESHOLD = 80;
+const ACTION_WIDTH = 75;
 
-interface OptimizedChatListItemProps {
-  chat: Chat;
-  onPress: () => void;
-  onLongPress?: () => void;
-  onPin: () => void;
-  onMute: () => void;
-  onArchive: () => void;
-  onDelete: () => void;
-  height?: number;
+const NEON = {
+  primary: '#8B5CF6',
+  secondary: '#4ECDC4',
+  accent: '#FF6B9D',
+  bgDark: '#0A0A0F',
+  bgCard: '#141420',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#A0A0B0',
+};
+
+// -------------------- SwipeableChatItem --------------------
+interface Chat {
+  id: string;
+  name: string;
+  lastMessage?: { text: string; senderName?: string; createdAt: number };
+  unreadCount: number;
+  isPinned: boolean;
+  isMuted: boolean;
+  type: 'group' | 'private';
 }
 
-function OptimizedChatListItem({
-  chat,
-  onPress,
-  onLongPress,
-  onPin,
-  onMute,
-  onArchive,
-  onDelete,
-  height = 72,
-}: OptimizedChatListItemProps) {
-  const { theme } = useTheme();
-  const translateX = useRef(new Animated.Value(0)).current;
+interface SwipeableChatItemProps {
+  chat: Chat;
+  index: number;
+  onPress: (chat: Chat) => void;
+  onDelete: (id: string) => void;
+  onPin: (id: string, pinned: boolean) => void;
+  onMute: (id: string, muted: boolean) => void;
+}
 
-  // Pan responder для свайпов
+const SwipeableChatItem = React.memo(({ chat, index, onPress, onDelete, onPin, onMute }: SwipeableChatItemProps) => {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const [isOpen, setIsOpen] = useState(false);
+  const gestureStartX = useRef(0);
+
+  const CLOSE_X = 0;
+  const LEFT_X = -ACTION_WIDTH; // Удалить
+  const RIGHT_X = ACTION_WIDTH * 2; // Pin + Mute
+
+  // Fade-in с stagger
+  useEffect(() => {
+    const delay = Math.min(index * 50, 400);
+    setTimeout(() => {
+      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, stiffness: 100, damping: 15 }).start();
+    }, delay);
+  }, []);
+
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 15 && Math.abs(gestureState.dy) < 15;
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > Math.abs(gs.dy) * 2 && Math.abs(gs.dx) > 10,
+      onPanResponderGrant: () => translateX.stopAnimation((v) => (gestureStartX.current = v)),
+      onPanResponderMove: (_, gs) => {
+        const clamped = Math.max(LEFT_X, Math.min(RIGHT_X, gestureStartX.current + gs.dx));
+        translateX.setValue(clamped);
       },
-      onPanResponderMove: (_, gestureState) => {
-        translateX.setValue(gestureState.dx);
+      onPanResponderRelease: (_, gs) => {
+        const velocity = gs.vx;
+        let toValue = CLOSE_X;
+        translateX.stopAnimation((v) => {
+          if (v <= -SWIPE_THRESHOLD || velocity < -0.5) toValue = LEFT_X;
+          else if (v >= SWIPE_THRESHOLD || velocity > 0.5) toValue = RIGHT_X;
+          Animated.spring(translateX, { toValue, useNativeDriver: true, friction: 10, tension: 100 }).start();
+          setIsOpen(toValue !== CLOSE_X);
+        });
       },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx > SWIPE_THRESHOLD) {
-          // Свайп вправо - закрепить
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-          }).start();
-          onPin();
-        } else if (gestureState.dx < -SWIPE_THRESHOLD) {
-          // Свайп влево - архивировать
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-          }).start();
-          onArchive();
-        } else {
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-          }).start();
-        }
+      onPanResponderTerminate: () => {
+        Animated.spring(translateX, { toValue: CLOSE_X, useNativeDriver: true }).start();
+        setIsOpen(false);
       },
     })
   ).current;
 
-  // Цвет аватара
-  const getAvatarColor = useCallback(() => {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFB347', '#DDA0DD', '#8B5CF6', '#F093FB'];
-    return colors[chat.name.charCodeAt(0) % colors.length];
-  }, [chat.name]);
-
-  // Форматирование времени
-  const formatTime = useCallback((timestamp?: number) => {
-    if (!timestamp) return '';
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diff = now.getTime() - timestamp;
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    if (days === 0) {
-      return date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
-    } else if (days === 1) {
-      return 'Вчера';
-    } else if (days < 7) {
-      return date.toLocaleDateString('ru', { weekday: 'short' });
+  const handlePress = () => {
+    if (isOpen) {
+      Animated.spring(translateX, { toValue: CLOSE_X, useNativeDriver: true }).start();
+      setIsOpen(false);
     } else {
-      return date.toLocaleDateString('ru', { day: '2-digit', month: '2-digit' });
-    }
-  }, []);
-
-  // Превью последнего сообщения
-  const getLastMessagePreview = useCallback(() => {
-    if (!chat.lastMessage) {
-      return chat.draft?.text ? `✏️ ${chat.draft.text}` : 'Нет сообщений';
-    }
-    
-    const msg = chat.lastMessage;
-    switch (msg.type) {
-      case 'voice':
-        return '🎤 Голосовое';
-      case 'image':
-        return '📷 Фото';
-      case 'file':
-        return `📎 ${msg.mediaFileName || 'Файл'}`;
-      default:
-        return msg.text || '';
-    }
-  }, [chat.lastMessage, chat.draft]);
-
-  // Иконка статуса
-  const renderStatusIcon = () => {
-    if (!chat.lastMessage) return null;
-    
-    const status = chat.lastMessage.status;
-    switch (status) {
-      case 'sending':
-        return <Feather name="clock" size={13} color={theme.textSecondary} />;
-      case 'sent':
-        return <Feather name="check" size={13} color={theme.textSecondary} />;
-      case 'delivered':
-        return <MaterialCommunityIcons name="check-all" size={13} color={theme.textSecondary} />;
-      case 'read':
-        return <MaterialCommunityIcons name="check-all" size={13} color="#4ECDC4" />;
-      case 'failed':
-        return <Feather name="alert-circle" size={13} color={theme.error} />;
-      default:
-        return null;
+      Haptics.selectionAsync();
+      onPress(chat);
     }
   };
 
+  const handlePressIn = () => Animated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true }).start();
+  const handlePressOut = () => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }).start();
+
+  const getAvatarColor = () => {
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFB347', '#DDA0DD', '#8B5CF6', '#F093FB'];
+    return colors[chat.name.charCodeAt(0) % colors.length];
+  };
+
+  const formatTime = (ts: number) => {
+    const date = new Date(ts);
+    const now = new Date();
+    const diff = now.getTime() - ts;
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+    if (days === 1) return 'Вчера';
+    if (days < 7) return date.toLocaleDateString('ru', { weekday: 'short' });
+    return date.toLocaleDateString('ru', { day: '2-digit', month: '2-digit' });
+  };
+
   return (
-    <View style={[styles.container, { height }]}>
-      {/* Свайп фон - слева (закрепить) */}
-      <View style={[styles.swipeBackground, styles.swipeLeft]}>
-        <LinearGradient
-          colors={['#4ECDC4', '#45B7D1']}
-          style={styles.swipeAction}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-        >
-          <Feather name={chat.isPinned ? 'bookmark' : 'bookmark'} size={22} color="#fff" />
-          <ThemedText style={styles.swipeText}>
-            {chat.isPinned ? 'Открепить' : 'Закрепить'}
-          </ThemedText>
-        </LinearGradient>
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: fadeAnim.interpolate({ inputRange: [0,1], outputRange: [0.95,1] }) }] }}>
+      {/* Actions */}
+      <View style={styles.leftActions}>
+        <Pressable style={[styles.actionBtn, { backgroundColor: chat.isPinned ? '#8E8E93' : NEON.primary }]} onPress={() => onPin(chat.id, !chat.isPinned)}>
+          <Feather name="bookmark" size={22} color="#fff" />
+          <Text style={styles.actionText}>{chat.isPinned ? 'Открепить' : 'Закрепить'}</Text>
+        </Pressable>
+        <Pressable style={[styles.actionBtn, { backgroundColor: chat.isMuted ? '#4ECDC4' : '#FFB347' }]} onPress={() => onMute(chat.id, !chat.isMuted)}>
+          <Feather name={chat.isMuted ? 'bell' : 'bell-off'} size={22} color="#fff" />
+          <Text style={styles.actionText}>{chat.isMuted ? 'Со звуком' : 'Без звука'}</Text>
+        </Pressable>
+      </View>
+      <View style={styles.rightActions}>
+        <Pressable style={[styles.actionBtn, { backgroundColor: '#FF6B6B' }]} onPress={() => onDelete(chat.id)}>
+          <Feather name="trash-2" size={22} color="#fff" />
+          <Text style={styles.actionText}>Удалить</Text>
+        </Pressable>
       </View>
 
-      {/* Свайп фон - справа (архив) */}
-      <View style={[styles.swipeBackground, styles.swipeRight]}>
-        <LinearGradient
-          colors={['#FF8E8E', '#FF6B6B']}
-          style={[styles.swipeAction, styles.swipeActionRight]}
-          start={{ x: 1, y: 0 }}
-          end={{ x: 0, y: 0 }}
-        >
-          <ThemedText style={styles.swipeText}>Архив</ThemedText>
-          <Feather name="archive" size={22} color="#fff" />
-        </LinearGradient>
-      </View>
-
-      {/* Основной контент */}
+      {/* Chat */}
       <Animated.View
-        style={[
-          styles.content,
-          { transform: [{ translateX }] },
-        ]}
+        style={[styles.chatItem, { transform: [{ translateX }, { scale: scaleAnim }] }]}
         {...panResponder.panHandlers}
       >
-        <Pressable
-          style={({ pressed }) => [
-            styles.pressable,
-            { 
-              backgroundColor: pressed 
-                ? theme.backgroundSecondary 
-                : chat.isPinned 
-                  ? theme.primary + '08' 
-                  : theme.backgroundDefault,
-            },
-          ]}
-          onPress={onPress}
-          onLongPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            onLongPress?.();
-          }}
-          delayLongPress={400}
-        >
-          {/* Аватар */}
-          <View style={styles.avatarContainer}>
-            <View style={[styles.avatar, { backgroundColor: getAvatarColor() }]}>
-              <ThemedText style={styles.avatarText}>
-                {chat.name.charAt(0).toUpperCase()}
-              </ThemedText>
-            </View>
-            {chat.type === 'private' && chat.otherUser?.isOnline && (
-              <View style={styles.onlineIndicator} />
-            )}
+        <Pressable onPress={handlePress} onPressIn={handlePressIn} onPressOut={handlePressOut} style={styles.chatContent}>
+          <View style={[styles.avatar, { backgroundColor: getAvatarColor() }]}>
+            <Text style={styles.avatarText}>{chat.name.charAt(0).toUpperCase()}</Text>
+            {chat.type === 'group' && <View style={styles.groupIndicator}><Feather name="users" size={8} color="#fff" /></View>}
           </View>
-
-          {/* Контент */}
-          <View style={styles.textContent}>
-            {/* Верхняя строка: имя + время */}
+          <View style={{ flex: 1 }}>
             <View style={styles.topRow}>
-              <View style={styles.nameContainer}>
-                {chat.type === 'group' && (
-                  <Feather 
-                    name="users" 
-                    size={13} 
-                    color={theme.textSecondary} 
-                    style={styles.typeIcon} 
-                  />
-                )}
-                {chat.type === 'channel' && (
-                  <Feather 
-                    name="radio" 
-                    size={13} 
-                    color={theme.textSecondary} 
-                    style={styles.typeIcon} 
-                  />
-                )}
-                <ThemedText style={styles.name} numberOfLines={1}>
-                  {chat.name}
-                </ThemedText>
-                {chat.isMuted && (
-                  <Feather 
-                    name="volume-x" 
-                    size={12} 
-                    color={theme.textSecondary} 
-                    style={styles.muteIcon} 
-                  />
-                )}
-              </View>
-              
-              <View style={styles.timeContainer}>
-                {renderStatusIcon()}
-                <ThemedText 
-                  style={[
-                    styles.time,
-                    { color: chat.unreadCount > 0 ? theme.primary : theme.textSecondary }
-                  ]}
-                >
-                  {formatTime(chat.lastMessage?.createdAt || chat.updatedAt)}
-                </ThemedText>
-              </View>
+              <Text style={styles.chatName}>{chat.name}</Text>
+              <Text style={{ color: chat.unreadCount > 0 ? NEON.primary : '#8E8E93' }}>{formatTime(chat.lastMessage?.createdAt || Date.now())}</Text>
             </View>
-
-            {/* Нижняя строка: сообщение + badges */}
             <View style={styles.bottomRow}>
-              <ThemedText 
-                style={[styles.preview, { color: theme.textSecondary }]} 
-                numberOfLines={1}
-              >
-                {getLastMessagePreview()}
-              </ThemedText>
-              
-              <View style={styles.badges}>
-                {chat.isPinned && (
-                  <Feather 
-                    name="bookmark" 
-                    size={12} 
-                    color={theme.primary} 
-                    style={styles.pinnedIcon} 
-                  />
-                )}
-                {chat.unreadCount > 0 && (
-                  <View 
-                    style={[
-                      styles.unreadBadge, 
-                      { backgroundColor: chat.isMuted ? theme.textSecondary : theme.primary }
-                    ]}
-                  >
-                    <ThemedText style={styles.unreadText}>
-                      {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
-                    </ThemedText>
-                  </View>
-                )}
-              </View>
+              <Text style={styles.lastMessage} numberOfLines={1}>{chat.lastMessage?.text || ''}</Text>
+              {chat.unreadCount > 0 && <View style={styles.unreadBadge}><Text style={styles.unreadText}>{chat.unreadCount > 99 ? '99+' : chat.unreadCount}</Text></View>}
             </View>
           </View>
         </Pressable>
       </Animated.View>
-    </View>
-  );
-}
-
-// Мемоизация для предотвращения лишних ререндеров
-export default React.memo(OptimizedChatListItem, (prev, next) => {
-  return (
-    prev.chat.id === next.chat.id &&
-    prev.chat.name === next.chat.name &&
-    prev.chat.lastMessage?.id === next.chat.lastMessage?.id &&
-    prev.chat.lastMessage?.status === next.chat.lastMessage?.status &&
-    prev.chat.unreadCount === next.chat.unreadCount &&
-    prev.chat.isPinned === next.chat.isPinned &&
-    prev.chat.isMuted === next.chat.isMuted &&
-    prev.chat.otherUser?.isOnline === next.chat.otherUser?.isOnline
+    </Animated.View>
   );
 });
 
+// -------------------- Стили --------------------
 const styles = StyleSheet.create({
-  container: {
-    position: 'relative',
-  },
-
-  // Свайп фон
-  swipeBackground: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: SCREEN_WIDTH,
-  },
-  swipeLeft: {
-    left: -SCREEN_WIDTH + 80,
-  },
-  swipeRight: {
-    right: -SCREEN_WIDTH + 80,
-  },
-  swipeAction: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  swipeActionRight: {
-    justifyContent: 'flex-end',
-  },
-  swipeText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-
-  // Контент
-  content: {
-    flex: 1,
-  },
-  pressable: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-
-  // Аватар
-  avatarContainer: {
-    position: 'relative',
-    marginRight: 12,
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#31A24C',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-
-  // Текст
-  textContent: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  topRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  nameContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  typeIcon: {
-    marginRight: 4,
-  },
-  name: {
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
-  },
-  muteIcon: {
-    marginLeft: 4,
-  },
-  timeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginLeft: 8,
-  },
-  time: {
-    fontSize: 12,
-  },
-  bottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  preview: {
-    flex: 1,
-    fontSize: 14,
-  },
-  badges: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 8,
-    gap: 6,
-  },
-  pinnedIcon: {
-    marginRight: 0,
-  },
-  unreadBadge: {
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  unreadText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
+  chatItem: { flexDirection: 'row', alignItems: 'center', height: ITEM_HEIGHT, paddingHorizontal: 20, backgroundColor: NEON.bgDark },
+  chatContent: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  avatar: { width: 58, height: 58, borderRadius: 29, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
+  avatarText: { color: '#fff', fontSize: 24, fontWeight: '700' },
+  groupIndicator: { position: 'absolute', bottom: -2, right: -2, width: 22, height: 22, borderRadius: 11, backgroundColor: NEON.primary, justifyContent: 'center', alignItems: 'center' },
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  bottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chatName: { fontSize: 17, fontWeight: '600', color: '#fff' },
+  lastMessage: { fontSize: 15, color: 'rgba(255,255,255,0.5)', flex: 1 },
+  unreadBadge: { minWidth: 24, height: 24, borderRadius: 12, backgroundColor: NEON.primary, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 6 },
+  unreadText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  leftActions: { position: 'absolute', left: 0, top: 0, bottom: 0, flexDirection: 'row' },
+  rightActions: { position: 'absolute', right: 0, top: 0, bottom: 0, flexDirection: 'row', justifyContent: 'flex-end' },
+  actionBtn: { width: ACTION_WIDTH, height: '100%', justifyContent: 'center', alignItems: 'center' },
+  actionText: { color: '#fff', fontSize: 11, fontWeight: '600', marginTop: 2 },
 });
+
+export default SwipeableChatItem;

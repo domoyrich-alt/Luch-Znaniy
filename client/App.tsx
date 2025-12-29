@@ -30,8 +30,8 @@ export default function App() {
       <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
         <QueryClientProvider client={queryClient}>
           <ThemeProvider>
-            <SettingsProvider>
-              <AuthProvider>
+            <AuthProvider>
+              <SettingsProvider>
                 <AppProvider>
                   <StarsProvider>
                     <NavigationContainer>
@@ -39,8 +39,8 @@ export default function App() {
                     </NavigationContainer>
                   </StarsProvider>
                 </AppProvider>
-              </AuthProvider>
-            </SettingsProvider>
+              </SettingsProvider>
+            </AuthProvider>
           </ThemeProvider>
         </QueryClientProvider>
       </KeyboardProvider>

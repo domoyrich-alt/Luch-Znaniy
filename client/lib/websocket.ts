@@ -29,10 +29,12 @@ export interface WSMessage {
   timestamp: number;
 }
 
+import { getApiUrl } from "./query-client";
+
 type MessageHandler = (message: WSMessage) => void;
 
-// Базовый URL API
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://hurricane-excited-providers-manhattan.trycloudflare.com';
+// Базовый URL API (единая логика)
+const API_URL = getApiUrl();
 
 class WebSocketClient {
   private ws: WebSocket | null = null;
@@ -180,6 +182,21 @@ class WebSocketClient {
     });
   }
 
+  // Отправить сообщение в чат
+  sendMessage(chatId: number, messageData: {
+    tempId: string;
+    text?: string;
+    type: string;
+    media?: any;
+    replyTo?: string;
+  }) {
+    this.send({
+      type: 'message',
+      payload: { chatId, ...messageData },
+      timestamp: Date.now(),
+    });
+  }
+
   // Остановить печать
   stopTyping(chatId: string) {
     this.send({
@@ -223,15 +240,20 @@ class WebSocketClient {
 
   private scheduleReconnect() {
     this.reconnectAttempts++;
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
     
-    console.log(`[WS Client] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    // Exponential backoff с jitter: base * 2^attempts + random jitter
+    const baseDelay = this.reconnectDelay;
+    const exponentialDelay = baseDelay * Math.pow(2, this.reconnectAttempts - 1);
+    const jitter = Math.random() * baseDelay; // 0-1000ms random jitter
+    const delay = Math.min(exponentialDelay + jitter, 30000); // Max 30 seconds
+    
+    console.log(`[WS Client] Reconnecting in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
     
     setTimeout(() => {
-      if (this.userId) {
+      if (this.userId && this.reconnectAttempts <= this.maxReconnectAttempts) {
         this.connect(this.userId, this.chatIds);
       }
-    }, Math.min(delay, 30000)); // Максимум 30 секунд
+    }, delay);
   }
 
   private flushQueue() {

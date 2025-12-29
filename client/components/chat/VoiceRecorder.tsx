@@ -1,9 +1,26 @@
+/**
+ * VOICE RECORDER - Как в Telegram (2025)
+ * • Удерживай для записи
+ * • Свайп влево → отмена (с анимацией)
+ * • Отпусти в центре → отправка
+ * • Красная точка + таймер
+ */
+
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, Pressable, Animated, Modal } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  Animated,
+  Modal,
+  PanGestureHandler,
+  PanGestureHandlerGestureEvent,
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { ThemedText } from '@/components/ThemedText';
-import { useTheme } from '@/hooks/useTheme';
-import { Spacing, BorderRadius } from '@/constants/theme';
+import * as Haptics from 'expo-haptics';
+
+const CANCEL_THRESHOLD = -100; // px влево для отмены
 
 interface VoiceRecorderProps {
   visible: boolean;
@@ -12,69 +29,125 @@ interface VoiceRecorderProps {
 }
 
 export function VoiceRecorder({ visible, onSend, onCancel }: VoiceRecorderProps) {
-  const { theme } = useTheme();
   const [duration, setDuration] = useState(0);
-  const [isRecording, setIsRecording] = useState(false);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    
     if (visible) {
-      setIsRecording(true);
       setDuration(0);
-      interval = setInterval(() => {
-        setDuration(prev => prev + 1);
-      }, 1000);
+      translateX.setValue(0);
+      opacity.setValue(1);
 
-      // Пульсирующая анимация
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.2, duration: 500, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-        ])
-      ).start();
+      intervalRef.current = setInterval(() => {
+        setDuration((prev) => prev + 1);
+      }, 1000);
     } else {
-      setIsRecording(false);
-      pulseAnim.setValue(1);
+      if (intervalRef.current) clearInterval(intervalRef.current);
     }
 
     return () => {
-      if (interval) clearInterval(interval);
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [visible]);
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(1, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleSend = () => {
-    onSend(duration);
+  const onGestureEvent = Animated.event(
+    [{ nativeEvent: { translationX: translateX } }],
+    { useNativeDriver: true }
+  );
+
+  const onHandlerStateChange = ({ nativeEvent }: PanGestureHandlerGestureEvent) => {
+    if (nativeEvent.state === 5) { // STATE_END
+      if (nativeEvent.translationX < CANCEL_THRESHOLD) {
+        // Отмена с анимацией
+        Animated.parallel([
+          Animated.timing(translateX, {
+            toValue: -300,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          onCancel();
+        });
+      } else {
+        // Возврат в центр и отправка
+        Animated.spring(translateX, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start(() => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          onSend(duration);
+        });
+      }
+    }
   };
+
+  if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={styles.overlay} onPress={onCancel}>
-        <Pressable style={[styles.recordingContainer, { backgroundColor: theme.backgroundDefault }]}>
-          <Pressable onPress={onCancel} style={styles.cancelButton}>
-            <Feather name="trash-2" size={24} color="#FF6B6B" />
-          </Pressable>
-
-          <View style={styles.recordingInfo}>
-            <Animated.View style={[styles.recordingDot, { transform: [{ scale: pulseAnim }] }]} />
-            <ThemedText style={styles.durationText}>{formatDuration(duration)}</ThemedText>
-          </View>
-
-          <Pressable
-            onPress={handleSend}
-            style={[styles.sendButton, { backgroundColor: theme.primary }]}
+    <Modal transparent animationType="fade">
+      <View style={styles.overlay}>
+        <PanGestureHandler
+          onGestureEvent={onGestureEvent}
+          onHandlerStateChange={onHandlerStateChange}
+          minDist={10}
+        >
+          <Animated.View
+            style={[
+              styles.container,
+              {
+                transform: [{ translateX }],
+                opacity,
+              },
+            ]}
           >
-            <Feather name="send" size={20} color="#fff" />
-          </Pressable>
-        </Pressable>
-      </Pressable>
+            {/* Стрелка отмены (появляется при свайпе) */}
+            <Animated.View
+              style={[
+                styles.cancelArrow,
+                {
+                  opacity: translateX.interpolate({
+                    inputRange: [-100, 0],
+                    outputRange: [1, 0],
+                    extrapolate: 'clamp',
+                  }),
+                },
+              ]}
+            >
+              <Feather name="arrow-left" size={24} color="#FF3B30" />
+              <ThemedText style={styles.cancelText}>Отмена</ThemedText>
+            </Animated.View>
+
+            {/* Основная панель записи */}
+            <View style={styles.recordingPanel}>
+              <View style={styles.recordingDot} />
+              <ThemedText style={styles.duration}>{formatDuration(duration)}</ThemedText>
+
+              <View style={styles.micIcon}>
+                <Feather name="mic" size={28} color="#FFF" />
+              </View>
+
+              <ThemedText style={styles.hint}>
+                {translateX.__getValue() < -50 ? 'Отпустите для отмены' : '↑ Отпустите для отправки'}
+              </ThemedText>
+            </View>
+          </Animated.View>
+        </PanGestureHandler>
+      </View>
     </Modal>
   );
 }
@@ -82,42 +155,65 @@ export function VoiceRecorder({ visible, onSend, onCancel }: VoiceRecorderProps)
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
-    padding: Spacing.md,
   },
-  recordingContainer: {
+  container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.lg,
-    borderRadius: BorderRadius.lg,
-    gap: Spacing.md,
+    backgroundColor: '#1C1C1E',
+    marginHorizontal: 16,
+    marginBottom: 32,
+    borderRadius: 28,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
   },
-  cancelButton: {
-    padding: 8,
+  cancelArrow: {
+    position: 'absolute',
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  recordingInfo: {
+  cancelText: {
+    color: '#FF3B30',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  recordingPanel: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
   recordingDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#FF6B6B',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FF3B30',
   },
-  durationText: {
-    fontSize: 24,
+  duration: {
+    fontSize: 18,
     fontWeight: '600',
+    color: '#FFF',
+    minWidth: 60,
   },
-  sendButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  micIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#3390EC',
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 'auto',
+  },
+  hint: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    position: 'absolute',
+    bottom: -30,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
   },
 });

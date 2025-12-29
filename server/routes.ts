@@ -6,6 +6,7 @@ import path from "path";
 import multer from "multer";
 import fs from "fs";
 import { setupWebSocket, notifyNewMessage, addUserToChat, isUserOnline, broadcastToChat } from "./websocket";
+import { createSession, refreshTokens, revokeSession, revokeAllUserSessions, authMiddleware, AuthRequest } from "./auth";
 
 function detectRoleFromCode(code: string): string | null {
   if (code === "CEO-MASTER-2024") return "ceo";
@@ -98,6 +99,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const profile = await storage.getUserProfile(user.id);
       const needsProfileSetup = isNewUser || !profile || !profile.username;
 
+      // Создаём JWT сессию
+      const deviceInfo = req.headers['user-agent'] || 'Unknown device';
+      const { accessToken, refreshToken, expiresIn } = await createSession(user.id, deviceInfo);
+
+      // Инициализируем баланс звёзд для нового пользователя
+      if (isNewUser) {
+        await storage.addStars(user.id, 100, 'welcome_bonus', 'Бонус за регистрацию');
+      }
+
       res.json({
         user: {
           id:  user.id,
@@ -108,6 +118,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           className: validation.className,
         },
         needsProfileSetup,
+        auth: {
+          accessToken,
+          refreshToken,
+          expiresIn,
+        },
       });
 
     } catch (error) {
@@ -262,7 +277,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/subjects/: classId", async (req: Request, res: Response) => {
+  app.get("/api/subjects/:classId", async (req: Request, res: Response) => {
     try {
       const classId = parseInt(req.params.classId);
       const subjects = await storage.getSubjectsByClass(classId);
@@ -418,17 +433,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ИСПРАВЛЕНО: Убрана обязательность subjectId для расписания
   app.post("/api/schedule", async (req: Request, res: Response) => {
     try {
-      const { classId, subjectId, teacherId, dayOfWeek, startTime, endTime, room, isEvenWeek, subject, teacher } = req. body;
+      const { classId, subjectId, teacherId, dayOfWeek, startTime, endTime, room, isEvenWeek, subject, subjectName } = req.body;
 
       if (!classId || dayOfWeek === undefined || ! startTime || !endTime) {
         return res.status(400).json({ error: "Обязательные поля:  класс, день недели, время начала и конца" });
       }
 
+      const classIdNum = parseInt(classId);
+      const dayOfWeekNum = parseInt(dayOfWeek);
+      const desiredSubjectName = String(subjectName || subject || "Урок").trim() || "Урок";
+
+      // subjectId обязателен в БД (FK на subjects), поэтому подбираем валидный id
+      let resolvedSubjectId: number | undefined;
+      if (subjectId !== undefined && subjectId !== null && `${subjectId}`.trim() !== "") {
+        const candidate = parseInt(subjectId);
+        if (!Number.isNaN(candidate)) {
+          const existing = await storage.getSubject(candidate);
+          if (existing) resolvedSubjectId = existing.id;
+        }
+      }
+
+      if (!resolvedSubjectId) {
+        const classSubjects = await storage.getSubjectsByClass(classIdNum);
+        const normalizedDesired = desiredSubjectName.toLowerCase();
+
+        const byName = classSubjects.find((s) => String(s.name || "").trim().toLowerCase() === normalizedDesired);
+        if (byName) {
+          resolvedSubjectId = byName.id;
+        } else if (classSubjects.length > 0) {
+          // Если предметы уже есть, но такого названия нет — создаём новый
+          const created = await storage.createSubject({
+            name: desiredSubjectName,
+            classId: classIdNum,
+            teacherId: teacherId ? parseInt(teacherId) : undefined,
+          });
+          resolvedSubjectId = created.id;
+        } else {
+          // Если предметов вообще нет — создаём первый
+          const created = await storage.createSubject({
+            name: desiredSubjectName,
+            classId: classIdNum,
+            teacherId: teacherId ? parseInt(teacherId) : undefined,
+          });
+          resolvedSubjectId = created.id;
+        }
+      }
+
+      const resolvedTeacherId = teacherId ? parseInt(teacherId) : undefined;
+
       const item = await storage.createScheduleItem({
-        classId:  parseInt(classId),
-        subjectId: subjectId || 1, // Fallback ID
-        teacherId: teacherId || 1, // Fallback ID  
-        dayOfWeek: parseInt(dayOfWeek),
+        classId: classIdNum,
+        subjectId: resolvedSubjectId,
+        teacherId: Number.isNaN(resolvedTeacherId as any) ? undefined : resolvedTeacherId,
+        dayOfWeek: dayOfWeekNum,
         startTime,
         endTime,
         room:  room || "", // Кабинет необязательный
@@ -1126,8 +1183,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { userId } = req.params;
       const { username, bio, phoneNumber, birthday, favoriteMusic, status, avatarUrl } = req.body;
-      
-      const profile = await storage.createOrUpdateUserProfile(parseInt(userId), {
+
+      const uid = parseInt(userId);
+      const before = await storage.getUserProfile(uid);
+
+      const profile = await storage.createOrUpdateUserProfile(uid, {
         username,
         bio,
         phoneNumber,
@@ -1136,10 +1196,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status,
         avatarUrl,
       });
+
+      if (typeof avatarUrl === "string") {
+        const trimmed = avatarUrl.trim();
+        const beforeUrl = before?.avatarUrl ? String(before.avatarUrl).trim() : "";
+        if (trimmed && trimmed !== beforeUrl) {
+          await storage.addUserProfilePhoto(uid, trimmed);
+        }
+      }
       
       res.json(profile);
     } catch (error) {
       console.error("Update profile error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // История фото профиля
+  app.get("/api/user/:userId/profile/photos", async (req: Request, res: Response) => {
+    try {
+      const uid = parseInt(req.params.userId);
+      const profile = await storage.getUserProfile(uid);
+
+      // Если история пустая, но аватар уже есть — добавим его в историю один раз
+      const existing = await storage.getUserProfilePhotos(uid);
+      if (existing.length === 0 && profile?.avatarUrl) {
+        await storage.addUserProfilePhoto(uid, String(profile.avatarUrl));
+      }
+
+      const photos = await storage.getUserProfilePhotos(uid);
+      res.json(photos);
+    } catch (error) {
+      console.error("Get profile photos error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.delete("/api/user/:userId/profile/photos/:photoId", async (req: Request, res: Response) => {
+    try {
+      const uid = parseInt(req.params.userId);
+      const photoId = parseInt(req.params.photoId);
+
+      const photo = await storage.getUserProfilePhoto(photoId);
+      if (!photo || photo.userId !== uid) {
+        return res.status(404).json({ error: "Фото не найдено" });
+      }
+
+      await storage.deleteUserProfilePhoto(uid, photoId);
+
+      // Если удалили текущее фото профиля — откатим на последнее из истории (или null)
+      const profile = await storage.getUserProfile(uid);
+      const currentUrl = profile?.avatarUrl ? String(profile.avatarUrl) : "";
+      if (currentUrl && currentUrl === String(photo.photoUrl)) {
+        const remaining = await storage.getUserProfilePhotos(uid);
+        const nextUrl = remaining[0]?.photoUrl ? String(remaining[0].photoUrl) : null;
+        await storage.createOrUpdateUserProfile(uid, { avatarUrl: nextUrl as any });
+      }
+
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Delete profile photo error:", error);
       res.status(500).json({ error: "Ошибка сервера" });
     }
   });
@@ -1207,9 +1323,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const otherUser = await storage.getUser(otherUserId);
         const otherProfile = await storage.getUserProfile(otherUserId);
         
-        // Получаем последнее сообщение
-        const messages = await storage.getPrivateChatMessages(chat.id, 1, 0);
-        const lastMessage = messages.length > 0 ? messages[0] : null;
+        // Получаем последнее сообщение (самое новое)
+        const lastMessage = await storage.getLastPrivateChatMessage(chat.id);
         
         return {
           ...chat,
@@ -1879,6 +1994,174 @@ function generateInviteCode(role: string, classId?:  number): string {
       res.sendFile(adminPanelPath);
     } else {
       res.status(404).send("Админ-панель не найдена");
+    }
+  });
+
+  // ==================== JWT AUTH API ====================
+
+  // Обновить токены
+  app.post("/api/auth/refresh", async (req: Request, res: Response) => {
+    try {
+      const { refreshToken } = req.body;
+      if (!refreshToken) {
+        return res.status(400).json({ error: "Refresh token обязателен" });
+      }
+
+      const tokens = await refreshTokens(refreshToken);
+      if (!tokens) {
+        return res.status(401).json({ error: "Недействительный refresh token" });
+      }
+
+      res.json(tokens);
+    } catch (error) {
+      console.error("Token refresh error:", error);
+      res.status(500).json({ error: "Ошибка обновления токена" });
+    }
+  });
+
+  // Выход (отзыв сессии)
+  app.post("/api/auth/logout", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const { refreshToken } = req.body;
+      if (refreshToken) {
+        await revokeSession(refreshToken);
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Logout error:", error);
+      res.status(500).json({ error: "Ошибка выхода" });
+    }
+  });
+
+  // Выход со всех устройств
+  app.post("/api/auth/logout-all", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ error: "Не авторизован" });
+      }
+      await revokeAllUserSessions(req.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Logout all error:", error);
+      res.status(500).json({ error: "Ошибка выхода" });
+    }
+  });
+
+  // Получить активные сессии
+  app.get("/api/auth/sessions", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ error: "Не авторизован" });
+      }
+      const sessions = await storage.getUserActiveSessions(req.userId);
+      res.json(sessions.map(s => ({
+        id: s.id,
+        deviceInfo: s.deviceInfo,
+        lastUsedAt: s.lastUsedAt,
+        createdAt: s.createdAt,
+      })));
+    } catch (error) {
+      console.error("Get sessions error:", error);
+      res.status(500).json({ error: "Ошибка получения сессий" });
+    }
+  });
+
+  // ==================== СЕРВЕРНЫЙ БАЛАНС ЗВЁЗД ====================
+
+  // Получить баланс звёзд
+  app.get("/api/stars/:userId", async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const stars = await storage.getOrCreateUserStars(userId);
+      res.json({
+        balance: stars.balance,
+        totalEarned: stars.totalEarned,
+        totalSpent: stars.totalSpent,
+      });
+    } catch (error) {
+      console.error("Get stars error:", error);
+      res.status(500).json({ error: "Ошибка получения баланса" });
+    }
+  });
+
+  // Добавить звёзды (для заработка через активности)
+  app.post("/api/stars/earn", async (req: Request, res: Response) => {
+    try {
+      const { userId, amount, type, reason, relatedId } = req.body;
+      if (!userId || !amount || !type) {
+        return res.status(400).json({ error: "userId, amount и type обязательны" });
+      }
+
+      const result = await storage.addStars(userId, amount, type, reason, relatedId);
+      res.json({ 
+        success: true, 
+        newBalance: result.newBalance,
+        transaction: result.transaction 
+      });
+    } catch (error) {
+      console.error("Earn stars error:", error);
+      res.status(500).json({ error: "Ошибка начисления звёзд" });
+    }
+  });
+
+  // Потратить звёзды (покупка подарков и др.)
+  app.post("/api/stars/spend", async (req: Request, res: Response) => {
+    try {
+      const { userId, amount, type, reason, relatedId } = req.body;
+      if (!userId || !amount || !type) {
+        return res.status(400).json({ error: "userId, amount и type обязательны" });
+      }
+
+      const result = await storage.spendStars(userId, amount, type, reason, relatedId);
+      if (!result.success) {
+        return res.status(400).json({ error: result.error });
+      }
+
+      res.json({ 
+        success: true, 
+        newBalance: result.newBalance,
+        transaction: result.transaction 
+      });
+    } catch (error) {
+      console.error("Spend stars error:", error);
+      res.status(500).json({ error: "Ошибка списания звёзд" });
+    }
+  });
+
+  // CEO покупка звёзд (бесплатно)
+  app.post("/api/stars/ceo-buy", async (req: Request, res: Response) => {
+    try {
+      const { userId, amount } = req.body;
+      if (!userId || !amount) {
+        return res.status(400).json({ error: "userId и amount обязательны" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'ceo') {
+        return res.status(403).json({ error: "Только CEO может использовать этот эндпоинт" });
+      }
+
+      const result = await storage.addStars(userId, amount, 'ceo_purchase', `CEO покупка ${amount} звёзд`);
+      res.json({ 
+        success: true, 
+        newBalance: result.newBalance 
+      });
+    } catch (error) {
+      console.error("CEO buy stars error:", error);
+      res.status(500).json({ error: "Ошибка покупки звёзд" });
+    }
+  });
+
+  // История транзакций звёзд
+  app.get("/api/stars/:userId/transactions", async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const limit = parseInt(req.query.limit as string) || 50;
+      const transactions = await storage.getStarTransactions(userId, limit);
+      res.json(transactions);
+    } catch (error) {
+      console.error("Get transactions error:", error);
+      res.status(500).json({ error: "Ошибка получения истории" });
     }
   });
 

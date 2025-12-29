@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
-  ScrollView,
   TextInput,
   Pressable,
   Image,
@@ -16,11 +15,24 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/context/AuthContext';
 import { useSettings } from '@/context/SettingsContext';
 import { getApiUrl } from '@/lib/query-client';
 import { Spacing, BorderRadius } from '@/constants/theme';
+
+const isProbablyRemoteUrl = (value: string) => /^https?:\/\//i.test(value) || value.startsWith('/uploads/');
+
+const makeAbsoluteUrl = (maybeRelative: string) => {
+  if (!maybeRelative) return '';
+  if (/^https?:\/\//i.test(maybeRelative)) return maybeRelative;
+  try {
+    return new URL(maybeRelative, getApiUrl()).toString();
+  } catch {
+    return maybeRelative;
+  }
+};
 
 export default function EditProfileScreen() {
   const { theme } = useTheme();
@@ -94,11 +106,44 @@ export default function EditProfileScreen() {
 
     setLoading(true);
     try {
+      let uploadedAvatarUrl: string | null = null;
+
+      // Если аватар выбран локально — загрузим на сервер и будем хранить URL
+      if (avatar && !isProbablyRemoteUrl(avatar)) {
+        const form = new FormData();
+        form.append('file', {
+          uri: avatar,
+          name: 'avatar.jpg',
+          type: 'image/jpeg',
+        } as any);
+
+        const uploadUrl = new URL('/api/upload', getApiUrl()).toString();
+        const uploadRes = await fetch(uploadUrl, {
+          method: 'POST',
+          body: form,
+          // Важно: не задаём Content-Type вручную, чтобы boundary проставился корректно
+        });
+
+        if (!uploadRes.ok) {
+          const text = await uploadRes.text();
+          throw new Error(text || 'Failed to upload avatar');
+        }
+
+        const uploadData = await uploadRes.json();
+        if (uploadData?.fileUrl) {
+          uploadedAvatarUrl = String(uploadData.fileUrl);
+        }
+      } else if (avatar && avatar.startsWith('/uploads/')) {
+        uploadedAvatarUrl = avatar;
+      }
+
+      const avatarForSettings = uploadedAvatarUrl ? makeAbsoluteUrl(uploadedAvatarUrl) : avatar;
+
       await updateProfileSettings({
         displayName: displayName.trim(),
         bio: bio.trim(),
         status: status.trim(),
-        avatar,
+        avatar: avatarForSettings,
       });
 
       // Сохраняем username на сервере (если пользователь залогинен)
@@ -108,6 +153,10 @@ export default function EditProfileScreen() {
         };
         if (normalizedUsername.length > 0) {
           body.username = normalizedUsername;
+        }
+
+        if (uploadedAvatarUrl) {
+          body.avatarUrl = uploadedAvatarUrl;
         }
 
         // Примечание: backend в проекте принимает PATCH без токена (по userId), как при регистрации
@@ -149,7 +198,7 @@ export default function EditProfileScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <KeyboardAwareScrollViewCompat contentContainerStyle={styles.content}>
         {/* Аватар */}
         <Pressable style={styles.avatarSection} onPress={pickImage}>
           <View style={[styles.avatar, { backgroundColor: theme.primary }]}>
@@ -260,7 +309,7 @@ export default function EditProfileScreen() {
             Эта информация будет видна другим пользователям приложения
           </ThemedText>
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollViewCompat>
     </ThemedView>
   );
 }

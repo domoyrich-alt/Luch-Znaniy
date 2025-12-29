@@ -500,6 +500,9 @@ export const useChatStore = create<ChatStore>()(
             type: optimisticMessage.type,
             mediaUrl: optimisticMessage.mediaUrl,
             mediaType: optimisticMessage.mediaType,
+            mediaFileName: optimisticMessage.mediaFileName,
+            mediaSize: optimisticMessage.mediaSize,
+            mediaDuration: optimisticMessage.mediaDuration,
             localId: localId, // Для синхронизации с WebSocket
           }),
         });
@@ -933,6 +936,7 @@ function transformRawMessage(raw: any): Message {
     mediaType: raw.mediaType,
     mediaFileName: raw.mediaFileName,
     mediaSize: raw.mediaSize,
+    mediaDuration: raw.mediaDuration,
     status: raw.isRead ? 'read' : 'delivered',
     readState: raw.isRead ? 'read' : 'unread',
     reactions: raw.reactions || [],

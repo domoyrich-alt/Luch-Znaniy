@@ -4,6 +4,7 @@ import {
   StyleSheet, 
   Pressable, 
   Dimensions,
+  Image,
   Alert,
   Modal,
   FlatList,
@@ -35,7 +36,8 @@ import { ThemedText } from "@/components/ThemedText";
 import type { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import { useAuth } from "@/context/AuthContext";
 import { useStars } from "@/context/StarsContext";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiDelete, apiGet, apiPost } from "@/lib/api";
+import { getApiUrl as getBaseApiUrl } from "@/lib/query-client";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const HEADER_MAX_HEIGHT = 280;
@@ -60,6 +62,21 @@ const NEON = {
 };
 
 type UserProfileRouteProp = RouteProp<HomeStackParamList, 'UserProfile'>;
+
+type RemoteUserProfile = {
+  userId: number;
+  username?: string | null;
+  bio?: string | null;
+  avatarUrl?: string | null;
+  status?: string | null;
+};
+
+type UserProfilePhoto = {
+  id: number;
+  userId: number;
+  photoUrl: string;
+  createdAt?: string;
+};
 
 // Тип для подарка
 interface ReceivedGift {
@@ -204,6 +221,9 @@ const ProfileGiftBadge = ({ gift, index, onPress }: {
   };
   
   const rarity = gift.giftType?.rarity || 'common';
+  const senderName = gift.isAnonymous 
+    ? '👤' 
+    : gift.sender?.firstName?.charAt(0) || '?';
   
   return (
     <Animated.View 
@@ -221,6 +241,14 @@ const ProfileGiftBadge = ({ gift, index, onPress }: {
           style={[styles.profileGiftGradient, { borderColor: getRarityBorder(rarity) }]}
         >
           <ThemedText style={styles.profileGiftEmoji}>{gift.giftType?.emoji || '🎁'}</ThemedText>
+          {/* Price badge */}
+          <View style={styles.giftPriceBadge}>
+            <ThemedText style={styles.giftPriceText}>⭐{gift.giftType?.price || 0}</ThemedText>
+          </View>
+          {/* Sender indicator */}
+          <View style={styles.giftSenderBadge}>
+            <ThemedText style={styles.giftSenderText}>{senderName}</ThemedText>
+          </View>
           {!gift.isOpened && (
             <View style={styles.newGiftIndicator}>
               <ThemedText style={styles.newGiftText}>NEW</ThemedText>
@@ -318,6 +346,26 @@ export default function UserProfileScreen() {
   
   const { userId, firstName, lastName, username, avgGrade } = route.params;
   const normalizedUsername = typeof username === 'string' ? username.replace(/^@+/, '') : '';
+
+  const [remoteProfile, setRemoteProfile] = useState<RemoteUserProfile | null>(null);
+  const [profilePhotos, setProfilePhotos] = useState<UserProfilePhoto[]>([]);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+
+  const canManagePhotos = !!currentUser && (currentUser.id === userId || currentUser.role === "ceo" || currentUser.role === "director");
+
+  const resolveRemoteUrl = (url?: string | null) => {
+    if (!url) return null;
+    const trimmed = String(url).trim();
+    if (!trimmed) return null;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    try {
+      return new URL(trimmed, getBaseApiUrl()).toString();
+    } catch {
+      return trimmed;
+    }
+  };
+
+  const avatarUri = resolveRemoteUrl(remoteProfile?.avatarUrl);
   
   // State для подарков
   const [receivedGifts, setReceivedGifts] = useState<ReceivedGift[]>([]);
@@ -336,6 +384,51 @@ export default function UserProfileScreen() {
     loadGifts();
     loadGiftTypes();
   }, [userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProfile = async () => {
+      try {
+        setLoadingProfile(true);
+        const profile = await apiGet<RemoteUserProfile>(`/api/user/${userId}/profile`);
+        const photos = await apiGet<UserProfilePhoto[]>(`/api/user/${userId}/profile/photos`);
+        if (cancelled) return;
+        setRemoteProfile(profile || null);
+        setProfilePhotos(Array.isArray(photos) ? photos : []);
+      } finally {
+        if (!cancelled) setLoadingProfile(false);
+      }
+    };
+
+    loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const confirmDeletePhoto = (photo: UserProfilePhoto) => {
+    if (!canManagePhotos) return;
+    Alert.alert("Удалить фото?", "Фото будет удалено из истории.", [
+      { text: "Отмена", style: "cancel" },
+      {
+        text: "Удалить",
+        style: "destructive",
+        onPress: async () => {
+          const ok = await apiDelete(`/api/user/${userId}/profile/photos/${photo.id}`);
+          if (!ok) {
+            Alert.alert("Ошибка", "Не удалось удалить фото");
+            return;
+          }
+          // Обновим список и профиль (аватар мог измениться)
+          const photos = await apiGet<UserProfilePhoto[]>(`/api/user/${userId}/profile/photos`);
+          const profile = await apiGet<RemoteUserProfile>(`/api/user/${userId}/profile`);
+          setProfilePhotos(Array.isArray(photos) ? photos : []);
+          setRemoteProfile(profile || null);
+        },
+      },
+    ]);
+  };
   
   const loadGifts = async () => {
     try {
@@ -361,7 +454,9 @@ export default function UserProfileScreen() {
   const handleSendGiftConfirm = async () => {
     if (!selectedGift || !currentUser) return;
     
-    if (stars < selectedGift.price) {
+    // Сначала списываем звёзды через сервер
+    const canSpend = await spendStars(selectedGift.price, 'profile_gift', `Подарок: ${selectedGift.name}`);
+    if (!canSpend) {
       Alert.alert('Недостаточно звёзд', `Вам нужно ${selectedGift.price} ⭐, а у вас ${stars} ⭐`);
       return;
     }
@@ -375,8 +470,6 @@ export default function UserProfileScreen() {
         message: giftMessage || null,
         isAnonymous,
       });
-      
-      spendStars(selectedGift.price);
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('🎁 Подарок отправлен!', `${selectedGift.emoji} ${selectedGift.name} отправлен ${firstName}!`);
@@ -585,9 +678,13 @@ export default function UserProfileScreen() {
               style={styles.avatarGradient}
             >
               <View style={styles.avatarInner}>
-                <ThemedText style={styles.avatarText}>
-                  {firstName.charAt(0)}{lastName.charAt(0)}
-                </ThemedText>
+                {avatarUri ? (
+                  <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+                ) : (
+                  <ThemedText style={styles.avatarText}>
+                    {firstName.charAt(0)}{lastName.charAt(0)}
+                  </ThemedText>
+                )}
               </View>
             </LinearGradient>
           </Animated.View>
@@ -648,6 +745,36 @@ export default function UserProfileScreen() {
               />
             </View>
           </LinearGradient>
+        </Animated.View>
+
+        {/* Photos History */}
+        <Animated.View entering={FadeInDown.delay(240).springify()} style={styles.photosSection}>
+          <View style={styles.photosHeaderRow}>
+            <ThemedText style={styles.sectionTitle}>Фото</ThemedText>
+            {loadingProfile ? (
+              <ActivityIndicator size="small" color={NEON.textSecondary} />
+            ) : null}
+          </View>
+          {profilePhotos.length === 0 ? (
+            <ThemedText style={styles.photosEmpty}>История фото пуста</ThemedText>
+          ) : (
+            <View style={styles.photosGrid}>
+              {profilePhotos.slice(0, 12).map((p) => {
+                const uri = resolveRemoteUrl(p.photoUrl);
+                if (!uri) return null;
+                return (
+                  <View key={p.id} style={styles.photoTile}>
+                    <Image source={{ uri }} style={styles.photoImage} />
+                    {canManagePhotos ? (
+                      <Pressable onPress={() => confirmDeletePhoto(p)} style={styles.photoDeleteButton}>
+                        <Feather name="trash-2" size={14} color={NEON.textPrimary} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </Animated.View>
 
         {/* Action Buttons */}
@@ -921,9 +1048,18 @@ export default function UserProfileScreen() {
                   <ThemedText style={styles.giftDetailName}>
                     {selectedReceivedGift.giftType?.name || 'Подарок'}
                   </ThemedText>
+                  {/* Price */}
+                  <View style={styles.giftDetailPriceContainer}>
+                    <ThemedText style={styles.giftDetailPrice}>
+                      ⭐ {selectedReceivedGift.giftType?.price || 0}
+                    </ThemedText>
+                    <ThemedText style={styles.giftDetailRarity}>
+                      {selectedReceivedGift.giftType?.rarity || 'common'}
+                    </ThemedText>
+                  </View>
                   <ThemedText style={styles.giftDetailFrom}>
                     {selectedReceivedGift.isAnonymous 
-                      ? 'От анонимного отправителя' 
+                      ? '👤 От анонимного отправителя' 
                       : `От ${selectedReceivedGift.sender?.firstName || 'кого-то'} ${selectedReceivedGift.sender?.lastName || ''}`
                     }
                   </ThemedText>
@@ -1009,8 +1145,10 @@ const styles = StyleSheet.create({
     borderRadius: 999, 
     backgroundColor: NEON.bgDark, 
     alignItems: 'center', 
-    justifyContent: 'center' 
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
+  avatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   avatarText: { fontSize: 36, fontWeight: '700', color: NEON.textPrimary },
   
   // Online Indicator
@@ -1150,6 +1288,35 @@ const styles = StyleSheet.create({
   // Info Section
   infoSection: { marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: NEON.textPrimary, marginBottom: 12 },
+  photosSection: { marginBottom: 24 },
+  photosHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  photosEmpty: { fontSize: 13, color: NEON.textSecondary, marginTop: 4 },
+  photosGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  photoTile: {
+    width: (SCREEN_WIDTH - 32 - 20) / 3,
+    aspectRatio: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: NEON.bgSecondary,
+    borderWidth: 1,
+    borderColor: NEON.primary + '20',
+  },
+  photoImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  photoDeleteButton: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   infoCard: { borderRadius: 20, overflow: 'hidden' },
   infoGradient: { 
     padding: 16, 
@@ -1245,6 +1412,36 @@ const styles = StyleSheet.create({
   },
   profileGiftEmoji: {
     fontSize: 28,
+  },
+  giftPriceBadge: {
+    position: 'absolute',
+    bottom: 2,
+    left: 2,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  giftPriceText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: NEON.warning,
+  },
+  giftSenderBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: NEON.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  giftSenderText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#FFF',
   },
   newGiftIndicator: {
     position: 'absolute',
@@ -1494,6 +1691,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: NEON.textPrimary,
     marginBottom: 8,
+  },
+  giftDetailPriceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  giftDetailPrice: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: NEON.warning,
+  },
+  giftDetailRarity: {
+    fontSize: 12,
+    color: NEON.primary,
+    textTransform: 'capitalize',
+    backgroundColor: NEON.primary + '20',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
   giftDetailFrom: {
     fontSize: 14,

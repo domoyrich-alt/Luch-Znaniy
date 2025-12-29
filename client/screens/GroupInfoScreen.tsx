@@ -12,8 +12,8 @@ import { useTheme } from "@/hooks/useTheme";
 export default function GroupInfoScreen() {
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
-  const route = useRoute();
-  const navigation = useNavigation();
+  const route = useRoute<any>();
+  const navigation = useNavigation<any>();
   
   const { groupId } = route.params || {};
 

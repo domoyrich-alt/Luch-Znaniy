@@ -25,11 +25,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemedText } from '@/components/ThemedText';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/context/AuthContext';
 import { wsClient } from '@/lib/websocket';
+import { getApiUrl } from '@/lib/query-client';
+
+const CHATS_CACHE_PREFIX = '@cached_chats:';
+const getChatsCacheKey = (userId: number) => `${CHATS_CACHE_PREFIX}${userId}`;
 
 // НЕОНОВЫЕ ЦВЕТА
 const NEON = {
@@ -126,6 +131,7 @@ interface SwipeableChatItemProps {
   onDelete: (id: string) => void;
   onPin: (id: string, pinned: boolean) => void;
   onMute: (id: string, muted: boolean) => void;
+  index?: number; // для staggered fade-in анимации
 }
 
 const SwipeableChatItem = React.memo(function SwipeableChatItem({ 
@@ -134,17 +140,57 @@ const SwipeableChatItem = React.memo(function SwipeableChatItem({
   onDelete,
   onPin,
   onMute,
+  index = 0,
 }: SwipeableChatItemProps) {
   const { theme } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current; // Fade-in анимация
+  const deleteHighlight = useRef(new Animated.Value(0)).current; // Подсветка при удалении
+  const archiveHighlight = useRef(new Animated.Value(0)).current; // Подсветка при архивировании
   const [isSwipeOpen, setIsSwipeOpen] = useState(false);
   const currentTranslateX = useRef(0);
+  const gestureStartX = useRef(0);
+
+  const CLOSED_X = 0;
+  const OPEN_LEFT_X = -ACTION_WIDTH;
+  const OPEN_RIGHT_X = ACTION_WIDTH * 2;
   
-  // Отслеживаем текущее значение translateX
+  // Fade-in анимация при монтировании (staggered эффект)
+  useEffect(() => {
+    const delay = Math.min(index * 40, 400); // Максимум 400мс задержки
+    const timer = setTimeout(() => {
+      Animated.spring(fadeAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        damping: 15,
+        stiffness: 100,
+      }).start();
+    }, delay);
+    
+    return () => clearTimeout(timer);
+  }, []);
+  
+  // Отслеживаем текущее значение translateX и обновляем подсветку
   useEffect(() => {
     const listener = translateX.addListener(({ value }) => {
       currentTranslateX.current = value;
+      
+      // Плавная подсветка для удаления (свайп влево)
+      if (value < -SWIPE_THRESHOLD) {
+        const intensity = Math.min(Math.abs(value + SWIPE_THRESHOLD) / ACTION_WIDTH, 1);
+        deleteHighlight.setValue(intensity);
+      } else {
+        deleteHighlight.setValue(0);
+      }
+      
+      // Плавная подсветка для архивирования (свайп вправо)  
+      if (value > SWIPE_THRESHOLD) {
+        const intensity = Math.min((value - SWIPE_THRESHOLD) / ACTION_WIDTH, 1);
+        archiveHighlight.setValue(intensity);
+      } else {
+        archiveHighlight.setValue(0);
+      }
     });
     return () => translateX.removeListener(listener);
   }, [translateX]);
@@ -159,48 +205,63 @@ const SwipeableChatItem = React.memo(function SwipeableChatItem({
         return isHorizontal && isSignificant;
       },
       onPanResponderGrant: () => {
-        // Сохраняем текущую позицию
-        translateX.setOffset(currentTranslateX.current);
-        translateX.setValue(0);
+        // Важно: останавливаем текущую анимацию, иначе при смене направления
+        // элемент может "залипнуть" в промежуточном положении.
+        translateX.stopAnimation((value) => {
+          currentTranslateX.current = value;
+          gestureStartX.current = value;
+        });
       },
       onPanResponderMove: (_, gestureState) => {
         // Ограничиваем свайп
-        const maxSwipeLeft = -ACTION_WIDTH;
-        const maxSwipeRight = ACTION_WIDTH * 2;
-        const newValue = Math.max(maxSwipeLeft, Math.min(maxSwipeRight, gestureState.dx));
-        translateX.setValue(newValue);
+        const maxSwipeLeft = OPEN_LEFT_X;
+        const maxSwipeRight = OPEN_RIGHT_X;
+        const next = gestureStartX.current + gestureState.dx;
+        const clamped = Math.max(maxSwipeLeft, Math.min(maxSwipeRight, next));
+        translateX.setValue(clamped);
       },
       onPanResponderRelease: (_, gestureState) => {
-        translateX.flattenOffset();
-        
         const velocity = gestureState.vx;
-        const currentValue = currentTranslateX.current;
-        
-        // Определяем конечную позицию на основе скорости и позиции
-        let toValue = 0;
-        
-        if (velocity < -0.5 || (currentValue < -SWIPE_THRESHOLD / 2 && velocity <= 0)) {
-          // Свайп влево - показать удаление
-          toValue = -ACTION_WIDTH;
-          setIsSwipeOpen(true);
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        } else if (velocity > 0.5 || (currentValue > SWIPE_THRESHOLD / 2 && velocity >= 0)) {
-          // Свайп вправо - показать закрепить/беззвучный
-          toValue = ACTION_WIDTH * 2;
-          setIsSwipeOpen(true);
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        } else {
-          // Вернуть на место
-          toValue = 0;
-          setIsSwipeOpen(false);
-        }
-        
-        Animated.spring(translateX, {
-          toValue,
-          useNativeDriver: true,
-          friction: 10,
-          tension: 100,
-        }).start();
+
+        // Берём актуальное значение (на случай, если listener не успел обновить)
+        translateX.stopAnimation((value) => {
+          currentTranslateX.current = value;
+
+          let toValue = CLOSED_X;
+
+          if (velocity < -0.5 || value <= -SWIPE_THRESHOLD) {
+            toValue = OPEN_LEFT_X;
+          } else if (velocity > 0.5 || value >= SWIPE_THRESHOLD) {
+            toValue = OPEN_RIGHT_X;
+          }
+
+          Animated.spring(translateX, {
+            toValue,
+            useNativeDriver: true,
+            friction: 10,
+            tension: 100,
+          }).start(() => {
+            setIsSwipeOpen(toValue !== CLOSED_X);
+            if (toValue !== CLOSED_X) {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }
+          });
+        });
+      },
+      onPanResponderTerminate: () => {
+        // Если жест прерван (например, скроллом) — всегда снапаем к ближайшему состоянию
+        translateX.stopAnimation((value) => {
+          currentTranslateX.current = value;
+          const toValue = Math.abs(value) > SWIPE_THRESHOLD ? (value < 0 ? OPEN_LEFT_X : OPEN_RIGHT_X) : CLOSED_X;
+          Animated.spring(translateX, {
+            toValue,
+            useNativeDriver: true,
+            friction: 10,
+            tension: 100,
+          }).start(() => {
+            setIsSwipeOpen(toValue !== CLOSED_X);
+          });
+        });
       },
     })
   ).current;
@@ -208,12 +269,12 @@ const SwipeableChatItem = React.memo(function SwipeableChatItem({
   const closeSwipe = useCallback(() => {
     setIsSwipeOpen(false);
     Animated.spring(translateX, {
-      toValue: 0,
+      toValue: CLOSED_X,
       useNativeDriver: true,
       friction: 10,
       tension: 100,
     }).start();
-  }, [translateX]);
+  }, [translateX, CLOSED_X]);
   
   const handlePress = useCallback(() => {
     if (isSwipeOpen) {
@@ -303,7 +364,33 @@ const SwipeableChatItem = React.memo(function SwipeableChatItem({
   };
 
   return (
-    <View style={styles.swipeableContainer}>
+    <Animated.View style={[styles.swipeableContainer, { opacity: fadeAnim, transform: [{ scale: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }) }] }]}>
+      {/* Подсветка фона при свайпе */}
+      <Animated.View 
+        style={[
+          StyleSheet.absoluteFill, 
+          { 
+            backgroundColor: deleteHighlight.interpolate({
+              inputRange: [0, 1],
+              outputRange: ['transparent', 'rgba(255, 107, 107, 0.15)']
+            })
+          }
+        ]} 
+        pointerEvents="none"
+      />
+      <Animated.View 
+        style={[
+          StyleSheet.absoluteFill, 
+          { 
+            backgroundColor: archiveHighlight.interpolate({
+              inputRange: [0, 1],
+              outputRange: ['transparent', 'rgba(139, 92, 246, 0.15)']
+            })
+          }
+        ]} 
+        pointerEvents="none"
+      />
+      
       {/* Левая сторона - действия при свайпе вправо (закрепить/беззвучный) */}
       <View style={styles.leftActionsContainer}>
         <Pressable
@@ -416,7 +503,7 @@ const SwipeableChatItem = React.memo(function SwipeableChatItem({
           </View>
         </Pressable>
       </Animated.View>
-    </View>
+    </Animated.View>
   );
 });
 
@@ -561,15 +648,36 @@ export default function TelegramChatsListScreen() {
   const [chats, setChats] = useState<typeof MOCK_CHATS>([]);
   const [loading, setLoading] = useState(false); // Start with false for instant display
 
+  // Мгновенно показываем кешированные чаты (если есть), не дожидаясь сети
+  useEffect(() => {
+    const loadCached = async () => {
+      if (!user?.id) return;
+      try {
+        const cached = await AsyncStorage.getItem(getChatsCacheKey(user.id));
+        if (!cached) return;
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setChats(parsed);
+          const chatIds = parsed.map((c: any) => c.id);
+          wsClient.connect(user.id, chatIds);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    loadCached();
+  }, [user?.id]);
+
   // Загрузка реальных чатов с сервера - ОПТИМИЗИРОВАНО
   const loadChats = useCallback(async () => {
     if (!user?.id) return;
     
     try {
-      // Only show loading on first load if no chats
-      if (chats.length === 0) setLoading(true);
+      // Не блокируем UI при первом заходе — показываем кеш/пустой список.
+      // loading оставляем для pull-to-refresh.
       
-      const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.110:5000';
+      const API_URL = getApiUrl();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
       
@@ -605,13 +713,22 @@ export default function TelegramChatsListScreen() {
         });
         
         setChats(formattedChats);
+
+        // Кешируем для следующего быстрого открытия
+        AsyncStorage.setItem(
+          getChatsCacheKey(user.id),
+          JSON.stringify(formattedChats),
+        ).catch(() => {});
         
         // ВАЖНО: Подключаем WebSocket со списком chatIds для получения сообщений в реальном времени
         const chatIds = formattedChats.map((c: any) => c.id);
         wsClient.connect(user.id, chatIds);
       }
-    } catch (error) {
-      console.error('Load chats error:', error);
+    } catch (error: any) {
+      // AbortError ожидаем при таймауте/смене экрана — не засоряем логи
+      if (error?.name !== 'AbortError') {
+        console.error('Load chats error:', error);
+      }
     } finally {
       setLoading(false);
     }
@@ -709,7 +826,7 @@ export default function TelegramChatsListScreen() {
     
     // Отмечаем прочитанными на сервере (в фоне)
     if (user?.id) {
-      const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.110:5000';
+      const API_URL = getApiUrl();
       fetch(`${API_URL}/api/chats/${chat.id}/read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -726,13 +843,14 @@ export default function TelegramChatsListScreen() {
     });
   }, [navigation, user?.id]);
 
-  const renderItem = useCallback(({ item }: { item: typeof MOCK_CHATS[0] }) => (
+  const renderItem = useCallback(({ item, index }: { item: typeof MOCK_CHATS[0]; index: number }) => (
     <SwipeableChatItem 
       chat={item} 
       onPress={() => handleChatPress(item)} 
       onDelete={handleDeleteChat}
       onPin={handlePinChat}
       onMute={handleMuteChat}
+      index={index}
     />
   ), [handleChatPress, handleDeleteChat, handlePinChat, handleMuteChat]);
 

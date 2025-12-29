@@ -8,9 +8,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { AuthStackParamList } from "@/navigation/AuthStackNavigator";
+import { RootStackParamList } from "@/navigation/RootStackNavigator";
 
-type WelcomeScreenNavigationProp = NativeStackNavigationProp<AuthStackParamList, "Welcome">;
+type WelcomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, "Welcome">;
 
 export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();

@@ -23,22 +23,23 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useStars } from "@/context/StarsContext";
+import { NEON_COLORS } from "@/constants/neonTheme";
 
 const { width } = Dimensions.get("window");
 
-// НЕОНОВЫЕ ЦВЕТА
+// НЕОНОВАЯ ТЕМА (единый источник правды)
 const NEON = {
-  primary: "#8B5CF6",
-  secondary: "#4ECDC4",
-  accent: "#FF6B9D",
-  warning: "#FFD93D",
-  success: "#6BCB77",
-  error: "#FF6B6B",
-  bgDark: "#0A0A0F",
-  bgCard: "#141420",
-  bgSecondary: "#1A1A2E",
-  textPrimary: "#FFFFFF",
-  textSecondary: "#A0A0B0",
+  primary: NEON_COLORS.primary,
+  secondary: NEON_COLORS.secondary,
+  accent: NEON_COLORS.pink,
+  warning: NEON_COLORS.warning,
+  success: NEON_COLORS.success,
+  error: NEON_COLORS.error,
+  bgDark: NEON_COLORS.backgroundDark,
+  bgCard: NEON_COLORS.backgroundCard,
+  bgSecondary: NEON_COLORS.backgroundSecondary,
+  textPrimary: NEON_COLORS.textPrimary,
+  textSecondary: NEON_COLORS.textSecondary,
 };
 
 const RARITY_COLORS: Record<string, string> = {
@@ -109,7 +110,7 @@ export default function GiftsScreen() {
   const navigation = useNavigation();
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { stars, spendStars } = useStars();
+  const { stars, spendStars, ceoBuyStars } = useStars();
 
   const [activeTab, setActiveTab] = useState<"shop" | "received" | "sent">("shop");
   const [giftTypes, setGiftTypes] = useState<GiftType[]>(DEFAULT_GIFTS);
@@ -117,6 +118,10 @@ export default function GiftsScreen() {
   const [sentGifts, setSentGifts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // CEO-only stars purchase (free / unlimited)
+  const [buyStarsModalVisible, setBuyStarsModalVisible] = useState(false);
+  const [buyStarsAmount, setBuyStarsAmount] = useState<number>(100);
   
   // Modal state
   const [sendModalVisible, setSendModalVisible] = useState(false);
@@ -206,13 +211,31 @@ export default function GiftsScreen() {
     setIsAnonymous(false);
   };
 
+  const handleBuyStars = async () => {
+    if (user?.role !== 'ceo') return;
+
+    const amount = Math.floor(buyStarsAmount);
+    if (!Number.isFinite(amount) || amount <= 0) return;
+
+    const success = await ceoBuyStars(amount);
+    if (success) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('✨ Успешно!', `Вы получили ${amount} ⭐`);
+    } else {
+      Alert.alert('Ошибка', 'Не удалось купить звёзды');
+    }
+    setBuyStarsModalVisible(false);
+  };
+
   const sendGift = async () => {
     if (!selectedGift || !selectedRecipient || !user?.id) {
       Alert.alert("Ошибка", "Выберите получателя");
       return;
     }
 
-    if (stars < selectedGift.price) {
+    // Сначала списываем звёзды через сервер
+    const canSpend = await spendStars(selectedGift.price, 'gift_purchase', `Подарок: ${selectedGift.name}`);
+    if (!canSpend) {
       Alert.alert("⭐ Недостаточно звёзд", `Нужно ${selectedGift.price} ⭐, у вас ${stars} ⭐`);
       return;
     }
@@ -233,7 +256,6 @@ export default function GiftsScreen() {
       });
 
       if (response.ok) {
-        spendStars(selectedGift.price);
         setSendModalVisible(false);
         Alert.alert(
           "🎁 Подарок отправлен!",
@@ -362,6 +384,24 @@ export default function GiftsScreen() {
         </View>
       </View>
 
+      {/* CEO ONLY: BUY STARS */}
+      {user?.role === 'ceo' && (
+        <View style={styles.buyStarsRow}>
+          <Pressable
+            onPress={() => setBuyStarsModalVisible(true)}
+            style={styles.buyStarsButton}
+          >
+            <LinearGradient
+              colors={[NEON.warning, NEON.accent]}
+              style={styles.buyStarsGradient}
+            >
+              <Feather name="plus-circle" size={18} color={NEON.bgDark} />
+              <ThemedText style={styles.buyStarsText}>Купить звёзды</ThemedText>
+            </LinearGradient>
+          </Pressable>
+        </View>
+      )}
+
       {/* TABS */}
       <View style={styles.tabsContainer}>
         <Pressable
@@ -457,6 +497,57 @@ export default function GiftsScreen() {
       )}
 
       {/* SEND GIFT MODAL */}
+      {/* BUY STARS MODAL (CEO ONLY) */}
+      <Modal
+        visible={buyStarsModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setBuyStarsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.buyStarsModalContent}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>⭐ Купить звёзды</ThemedText>
+              <Pressable onPress={() => setBuyStarsModalVisible(false)} style={styles.closeButton}>
+                <Feather name="x" size={22} color={NEON.textSecondary} />
+              </Pressable>
+            </View>
+
+            <ThemedText style={styles.buyStarsHint}>
+              Только для CEO. Добавляет звёзды бесплатно.
+            </ThemedText>
+
+            <View style={styles.packagesGrid}>
+              {[100, 250, 500, 1000, 2000].map((amount) => (
+                <Pressable
+                  key={amount}
+                  onPress={() => setBuyStarsAmount(amount)}
+                  style={[
+                    styles.packageCard,
+                    buyStarsAmount === amount && styles.packageCardActive,
+                  ]}
+                >
+                  <ThemedText
+                    style={[
+                      styles.packageText,
+                      buyStarsAmount === amount && styles.packageTextActive,
+                    ]}
+                  >
+                    ⭐ {amount}
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </View>
+
+            <Pressable onPress={handleBuyStars}>
+              <LinearGradient colors={[NEON.warning, NEON.accent]} style={styles.buyStarsConfirmGradient}>
+                <ThemedText style={styles.buyStarsConfirmText}>Купить ⭐ {buyStarsAmount}</ThemedText>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={sendModalVisible}
         animationType="slide"
@@ -610,6 +701,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: NEON.warning,
+  },
+  buyStarsRow: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  buyStarsButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  buyStarsGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+  },
+  buyStarsText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: NEON.bgDark,
   },
   tabsContainer: {
     flexDirection: "row",
@@ -789,10 +900,68 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: NEON.bgSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   modalTitle: {
     fontSize: 18,
     fontWeight: "bold",
     color: NEON.textPrimary,
+  },
+  buyStarsModalContent: {
+    backgroundColor: NEON.bgCard,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+  },
+  buyStarsHint: {
+    fontSize: 13,
+    color: NEON.textSecondary,
+    marginBottom: 12,
+  },
+  packagesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 14,
+  },
+  packageCard: {
+    backgroundColor: NEON.bgSecondary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: NEON.primary + '20',
+    minWidth: 110,
+    alignItems: 'center',
+  },
+  packageCardActive: {
+    borderColor: NEON.warning + '70',
+    backgroundColor: NEON.bgSecondary,
+  },
+  packageText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: NEON.textPrimary,
+  },
+  packageTextActive: {
+    color: NEON.warning,
+  },
+  buyStarsConfirmGradient: {
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buyStarsConfirmText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: NEON.bgDark,
   },
   modalLabel: {
     fontSize: 14,

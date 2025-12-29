@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiUrl } from "@/lib/query-client";
+import { saveTokens, clearTokens, apiFetch } from "@/lib/api";
 
 export type UserRole = "student" | "teacher" | "director" | "curator" | "cook" | "ceo" | "parent";
 
@@ -176,6 +177,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         className: data.user.className || role,
       };
 
+      // Сохраняем JWT токены если есть
+      if (data.auth?.accessToken && data.auth?.refreshToken) {
+        await saveTokens(data.auth.accessToken, data.auth.refreshToken);
+      }
+
       // Проверяем, нужно ли настроить профиль (новый пользователь без username)
       if (data.needsProfileSetup) {
         setPendingUserId(data.user.id);
@@ -235,6 +241,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    // Сначала вызываем logout на сервере для отзыва сессии
+    try {
+      await apiFetch('api/auth/logout', { method: 'POST' });
+    } catch (e) {
+      console.log('[Auth] Server logout failed, clearing local state anyway');
+    }
+    
+    // Очищаем токены
+    await clearTokens();
+    
     setUser(null);
     setNeedsProfileSetup(false);
     setPendingUserId(null);

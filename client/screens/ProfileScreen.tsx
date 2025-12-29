@@ -29,6 +29,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useStars } from "@/context/StarsContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useFocusEffect } from "@react-navigation/native";
+import { getApiUrl } from "@/lib/query-client";
 
 const { width, height } = Dimensions.get('window');
 
@@ -132,6 +133,18 @@ export default function ProfileScreen() {
   const [status, setStatus] = useState(settings.profile.status || 'Привет! Я использую это приложение');
   const [profilePhoto, setProfilePhoto] = useState<string | null>(settings.profile.avatar || null);
   const [avgGrade, setAvgGrade] = useState(0);
+
+  const resolveRemoteUrl = (url?: string | null) => {
+    if (!url) return null;
+    const trimmed = String(url).trim();
+    if (!trimmed) return null;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    try {
+      return new URL(trimmed, getApiUrl()).toString();
+    } catch {
+      return trimmed;
+    }
+  };
   
   const userRole = user?.role || 'student';
   const userName = `${firstName} ${lastName}`;
@@ -141,7 +154,7 @@ export default function ProfileScreen() {
       if (!user?.id) return;
       
       try {
-        const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.110:5000';
+        const API_URL = getApiUrl();
         
         // Загружаем профиль (правильный URL)
         const profileRes = await fetch(`${API_URL}/api/user/${user.id}/profile`);
@@ -156,9 +169,12 @@ export default function ProfileScreen() {
           if (profileData.status) {
             setStatus(profileData.status);
           }
-          // Не затираем локальный аватар из настроек (если пользователь выбрал фото на устройстве)
-          if (!settings.profile.avatar && profileData.avatarUrl) {
-            setProfilePhoto(profileData.avatarUrl);
+          // Приоритет: серверный аватар (источник истины)
+          if (profileData.avatarUrl) {
+            const serverAvatar = resolveRemoteUrl(profileData.avatarUrl);
+            setProfilePhoto(serverAvatar);
+          } else if (settings.profile.avatar) {
+            setProfilePhoto(settings.profile.avatar);
           }
         }
         
@@ -202,7 +218,7 @@ export default function ProfileScreen() {
   // Загрузка количества друзей и подарков
   const loadStats = async () => {
     if (!user?.id) return;
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.110:5000';
+    const API_URL = getApiUrl();
     
     try {
       // Загружаем количество друзей
@@ -422,7 +438,6 @@ export default function ProfileScreen() {
           
           {/* Username */}
           <View style={styles.usernameWrapper}>
-            <Feather name="at-sign" size={14} color={NEON.primary} />
             <ThemedText style={styles.usernameText}>{username}</ThemedText>
           </View>
         </Animated.View>

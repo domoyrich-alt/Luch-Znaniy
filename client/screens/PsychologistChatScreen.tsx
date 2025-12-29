@@ -113,7 +113,7 @@ export default function PsychologistChatScreen() {
     <KeyboardAvoidingView 
       style={styles.container} 
       behavior={Platform.OS === "ios" ? "padding" : "height"} 
-      keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight + insets.top : 0}
+      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 56 : 0}
     >
       <ThemedView style={styles.chatContainer}>
         <View style={styles.header}>

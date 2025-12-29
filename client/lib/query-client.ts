@@ -5,15 +5,28 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
  * @returns {string} The API base URL
  */
 export function getApiUrl(): string {
+  const directUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (directUrl && directUrl.length > 0) {
+    return directUrl.endsWith("/") ? directUrl.slice(0, -1) : directUrl;
+  }
+
   const host = process.env.EXPO_PUBLIC_DOMAIN;
   if (host && host.length > 0) {
     // если уже есть протокол
     if (host.startsWith("http://") || host.startsWith("https://")) {
       return host.endsWith("/") ? host.slice(0, -1) : host;
     }
-    // по умолчанию https для туннеля
-    return `https://${host}`;
+
+    const isLocal =
+      host.includes("localhost") ||
+      host.startsWith("127.") ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+
+    return `${isLocal ? "http" : "https"}://${host}`;
   }
+
   // fallback
   return "http://localhost:5000";
 }

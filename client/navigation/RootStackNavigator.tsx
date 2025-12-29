@@ -2,6 +2,7 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useAuth } from "@/context/AuthContext";
 
+import WelcomeScreen from "@/screens/WelcomeScreen";
 import InviteCodeScreen from "@/screens/InviteCodeScreen";
 import RegisterProfileScreen from "@/screens/RegisterProfileScreen";
 import MainTabNavigator from "@/navigation/MainTabNavigator";
@@ -25,6 +26,7 @@ import HomeworkScreen from "@/screens/HomeworkScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type RootStackParamList = {
+  Welcome: undefined;
   InviteCode: undefined;
   RegisterProfile: { userId: number; firstName: string; lastName: string };
   Main: undefined;
@@ -57,11 +59,18 @@ export default function RootStackNavigator() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
       {!user && !needsProfileSetup ? (
-        <Stack.Screen
-          name="InviteCode"
-          component={InviteCodeScreen}
-          options={{ headerShown: false }}
-        />
+        <>
+          <Stack.Screen
+            name="Welcome"
+            component={WelcomeScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="InviteCode"
+            component={InviteCodeScreen}
+            options={{ headerShown: false }}
+          />
+        </>
       ) : needsProfileSetup && pendingUserId ? (
         <Stack.Screen
           name="RegisterProfile"

@@ -25,7 +25,7 @@ export interface ChatMessage {
   senderName: string;
   senderAvatar?: string;
   text: string;
-  type: 'text' | 'voice' | 'image' | 'file' | 'system';
+  type: 'text' | 'voice' | 'image' | 'video' | 'file' | 'system';
   timestamp: number;
   createdAt?: string;      // для обратной совместимости (ISO date string)
   media?: MessageMedia;
@@ -33,6 +33,7 @@ export interface ChatMessage {
   mediaUrl?: string;
   mediaFileName?: string;
   mediaDuration?: number;
+  mediaType?: string;      // для обратной совместимости с video notes
   replyTo?: ChatMessage;
   forwardedFrom?: {
     chatId: string;

@@ -27,6 +27,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useStars } from "@/context/StarsContext";
 import ChatService, { PrivateMessage } from "@/services/ChatService";
 import GiftModal from "@/components/chat/GiftModal";
+import ImageViewer from "@/components/ImageViewer";
 
 // НЕОНОВЫЕ ЦВЕТА
 const NEON = {
@@ -70,6 +71,8 @@ export default function ChatScreenNew() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [giftModalVisible, setGiftModalVisible] = useState(false);
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string>("");
   const flatListRef = useRef<FlatList>(null);
 
   // Загружаем сообщения при открытии чата
@@ -107,7 +110,6 @@ export default function ChatScreenNew() {
       const msg = await ChatService.sendMessage(chatId, user.id, newMessage);
       setMessages([...messages, msg]);
       setNewMessage("");
-      earnStars(1, "Сообщение");
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
@@ -150,7 +152,6 @@ export default function ChatScreenNew() {
         );
 
         setMessages([...messages, msg]);
-        earnStars(2, "Фото в чат");
       }
     } catch (error) {
       Alert.alert("Ошибка", "Не удалось отправить фото");
@@ -189,7 +190,6 @@ export default function ChatScreenNew() {
         );
 
         setMessages([...messages, msg]);
-        earnStars(2, "Видео в чат");
       }
     } catch (error) {
       Alert.alert("Ошибка", "Не удалось отправить видео");
@@ -209,11 +209,15 @@ export default function ChatScreenNew() {
       // Формируем сообщение о подарке
       const giftText = `🎁 Подарок: ${gift.emoji} ${gift.name}${giftMessage ? `\n💬 ${giftMessage}` : ''}`;
       
+      // Сначала списываем звёзды через сервер
+      const canSpend = await spendStars(gift.price, 'chat_gift', `Подарок в чате: ${gift.name}`);
+      if (!canSpend) {
+        Alert.alert('⭐ Недостаточно звёзд', `Нужно ${gift.price} ⭐`);
+        return;
+      }
+      
       const msg = await ChatService.sendMessage(chatId, user.id, giftText);
       setMessages([...messages, msg]);
-      
-      // Списываем звёзды
-      spendStars(gift.price);
       
       setGiftModalVisible(false);
       
@@ -270,11 +274,21 @@ export default function ChatScreenNew() {
             isOwn && styles.ownMessageContainer,
           ]}
         >
-          <Image
-            source={{ uri: item.mediaUrl }}
-            style={styles.mediaImage}
-            resizeMode="cover"
-          />
+          <Pressable
+            onPress={() => {
+              if (item.mediaUrl) {
+                setSelectedImageUrl(item.mediaUrl);
+                setImageViewerVisible(true);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
+            }}
+          >
+            <Image
+              source={{ uri: item.mediaUrl }}
+              style={styles.mediaImage}
+              resizeMode="cover"
+            />
+          </Pressable>
           <ThemedText
             style={[
               styles.messageTime,
@@ -373,7 +387,7 @@ export default function ChatScreenNew() {
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: NEON.bgDark }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? Math.max(insets.top, 0) : headerHeight}
+      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 56 : 0}
     >
       <StatusBar barStyle="light-content" />
 
@@ -439,8 +453,21 @@ export default function ChatScreenNew() {
           <MaterialIcons name="image" size={22} color={NEON.secondary} />
         </Pressable>
 
-        <Pressable onPress={handleSendVideo} disabled={sending} style={styles.actionButton}>
-          <MaterialIcons name="videocam" size={22} color={NEON.secondary} />
+        <Pressable 
+          onPress={handleSendVideo} 
+          disabled={sending} 
+          style={styles.videoRecordButton}
+          onLongPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+            // Здесь можно добавить запись видеосообщения
+          }}
+        >
+          <LinearGradient
+            colors={[NEON.accent, '#FF4757']}
+            style={styles.videoRecordGradient}
+          >
+            <MaterialIcons name="videocam" size={18} color="#FFFFFF" />
+          </LinearGradient>
         </Pressable>
 
         <TextInput
@@ -479,6 +506,14 @@ export default function ChatScreenNew() {
         onSendGift={handleSendGift}
         userStars={stars || 0}
         recipientName={otherUserName}
+        isCeo={user?.role === 'ceo'}
+      />
+      
+      {/* ПРОСМОТР ФОТО */}
+      <ImageViewer
+        visible={imageViewerVisible}
+        imageUrl={selectedImageUrl}
+        onClose={() => setImageViewerVisible(false)}
       />
     </KeyboardAvoidingView>
   );
@@ -590,6 +625,19 @@ const styles = StyleSheet.create({
   actionButton: {
     width: 36,
     height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoRecordButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  videoRecordGradient: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },

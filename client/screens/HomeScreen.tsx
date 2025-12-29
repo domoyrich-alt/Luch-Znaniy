@@ -19,7 +19,6 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { ThemedText } from "@/components/ThemedText";
-import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
@@ -50,7 +49,7 @@ export default function HomeScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { theme, toggleTheme, isDark } = useTheme();
   const { user } = useAuth();
-  const { homework, events, announcements, grades, averageGrade } = useApp();
+  const { homework, events, announcements, grades, averageGrade, schedule } = useApp();
   const navigation = useNavigation();
 
   // ========== НОВЫЕ АНИМАЦИИ ==========
@@ -149,154 +148,16 @@ export default function HomeScreen() {
   const eventsCount = events.filter(e => !e.confirmed).length;
   const avgGrade = averageGrade > 0 ? averageGrade.toFixed(1) : "---";
 
-  // Быстрые действия
-  const nav: any = navigation;
-  const navigateRoot = (screen: string, params?: any) => {
-    const rootNav = nav.getParent?.()?.getParent?.();
-    if (rootNav?.navigate) {
-      rootNav.navigate(screen, params);
-      return;
-    }
-
-    const parentNav = nav.getParent?.();
-    if (parentNav?.navigate) {
-      parentNav.navigate(screen, params);
-      return;
-    }
-
-    nav.navigate?.(screen, params);
+  const getTodayDayNumber = () => {
+    const jsDay = new Date().getDay();
+    // JS: 0=Sun, 1=Mon..6=Sat; schedule: 1=Mon..6=Sat
+    if (jsDay === 0) return 1;
+    return Math.min(jsDay, 6);
   };
 
-  const quickActions = [
-    {
-      icon: "book" as const,
-      label: "Мои оценки",
-      color: "#22C55E",
-      emoji: "📊",
-      onPress: () => navigation.navigate("Grades" as never),
-    },
-    {
-      icon: "message-circle" as const,
-      label: "Написать психологу", 
-      color: Colors.light.secondary,
-      emoji: "💬",
-      onPress: () => nav.navigate("ChatsTab", { screen: "PsychologistChat" }),
-    },
-    {
-      icon: "video" as const,
-      label: "Онлайн уроки",
-      color: Colors.light.error,
-      emoji: "📹",
-      onPress: () => navigateRoot("OnlineLessons"),
-    },
-    {
-      icon: "users" as const,
-      label: "Чат класса",
-      color: Colors.light.success,
-      emoji: "👥",
-      onPress: () => nav.navigate("ChatsTab"),
-    },
-    {
-      icon: "gift" as const,
-      label: "Подарки",
-      color: "#FF6B9D",
-      emoji: "🎁",
-      onPress: () => navigateRoot("Gifts"),
-    },
-    {
-      icon: "heart" as const,
-      label: "Друзья",
-      color: "#4ECDC4",
-      emoji: "💚",
-      onPress: () => navigateRoot("Friends"),
-    },
-    {
-      icon: "award" as const,
-      label: "Рейтинг учеников",
-      color: Colors.light.warning,
-      emoji: "🏆",
-      onPress: () => navigateRoot("Leaderboard"),
-    },
-    {
-      icon: "heart" as const,
-      label: "Кружки",
-      color: Colors.light.error,
-      emoji: "❤️",
-      onPress: () => navigateRoot("Clubs"),
-    },
-    {
-      icon: "pie-chart" as const,
-      label: "Аналитика",
-      color: Colors.light.primary,
-      emoji: "📊",
-      onPress: () => navigateRoot("Analytics"),
-    },
-    {
-      icon: "users" as const,
-      label: "Форум",
-      color: "#9C27B0",
-      emoji: "💭",
-      onPress: () => navigateRoot("Forum"),
-    },
-    {
-      icon: "star" as const,
-      label: "Достижения",
-      color: "#FFD93D",
-      emoji: "🏆",
-      onPress: () => navigateRoot("Achievements"),
-    },
-    {
-      icon: "file-text" as const,
-      label: "Домашние задания",
-      color: "#6BCB77",
-      emoji: "📝",
-      onPress: () => navigateRoot("Homework"),
-    },
-  ];
-
-  // Журнал учителя - только для учителей и выше
-  if (user?.role === "teacher" || user?.role === "director" || user?.role === "ceo") {
-    quickActions.splice(0, 0, {
-      icon: "book-open" as any,
-      label: "Журнал класса",
-      color: "#8B5CF6",
-      emoji: "📚",
-      onPress: () => navigation.navigate("TeacherJournal" as never),
-    });
-  }
-
-  // Список класса - только для учеников
-  if (user?.role === "student") {
-    quickActions.splice(1, 0, {
-      icon: "users" as any,
-      label: "Мой класс",
-      color: "#8B5CF6",
-      emoji: "📋",
-      onPress: () => navigation.navigate("ClassList" as never),
-    });
-  }
-
-  // УПРАВЛЕНИЕ - только для учителей и выше (НЕ для учеников)
-  if (user?.role === "ceo" || user?.role === "director" || user?.role === "teacher") {
-    quickActions.push({
-      icon: "shield" as any,
-      label: "Управление",
-      color: "#FF6B35",
-      emoji: "🛡️",
-      onPress: () => navigateRoot("Admin"),
-    });
-  }
-
-  // Родительский портал - для родителей и учеников
-  if (user?.role === "parent" || user?.role === "student") {
-    quickActions.splice(2, 0, {
-      icon: "users" as any,
-      label: user?.role === "parent" ? "Мои дети" : "Родительский портал",
-      color: "#8B5CF6",
-      emoji: "👨‍👩‍👧",
-      onPress: () => navigateRoot("ParentPortal"),
-    });
-  }
+  const todayDayNumber = getTodayDayNumber();
+  const todaySchedule = schedule.filter((item: any) => item.day === todayDayNumber);
+  const schedulePreview = todaySchedule.slice(0, 4);
 
   // Интерполяции для анимации приветствия
   const greetingRotate = rotateAnim.interpolate({
@@ -376,10 +237,21 @@ export default function HomeScreen() {
             <ThemedText style={styles.neonGreetingTitle}>
               Привет, {user?.firstName || "Пользователь"}! 👋
             </ThemedText>
-            <View style={[styles.neonRoleBadge, { backgroundColor: getRoleColor(user?.role) + '30', borderColor: getRoleColor(user?.role) }]}>
-              <ThemedText style={[styles.neonRoleText, { color: getRoleColor(user?.role) }]}>
-                {getRoleEmoji(user?.role)} {getRoleLabel(user?.role)}
-              </ThemedText>
+            <View style={styles.badgesRow}>
+              {/* Для учеников показываем только класс, для остальных - роль */}
+              {user?.role === 'student' && user?.className ? (
+                <View style={[styles.neonRoleBadge, { backgroundColor: NEON.secondary + '30', borderColor: NEON.secondary }]}>
+                  <ThemedText style={[styles.neonRoleText, { color: NEON.secondary }]}>
+                    🏫 {user.className}
+                  </ThemedText>
+                </View>
+              ) : (
+                <View style={[styles.neonRoleBadge, { backgroundColor: getRoleColor(user?.role) + '30', borderColor: getRoleColor(user?.role) }]}>
+                  <ThemedText style={[styles.neonRoleText, { color: getRoleColor(user?.role) }]}>
+                    {getRoleEmoji(user?.role)} {getRoleLabel(user?.role)}
+                  </ThemedText>
+                </View>
+              )}
             </View>
           </View>
         </Animated.View>
@@ -529,98 +401,52 @@ export default function HomeScreen() {
             },
           ]}
         >
-          <ThemedText type="h4" style={styles.sectionTitle}>⚡ Быстрые действия</ThemedText>
-          <View style={styles.actionsGrid}>
-            {quickActions.map((action, index) => (
-              <AnimatedActionCard 
-                key={index}
-                action={action}
-                index={index}
-                theme={theme}
-                delay={index * 50}
-              />
-            ))}
+          <View style={styles.sectionHeader}>
+            <ThemedText type="h4">📅 Расписание</ThemedText>
+            <Pressable onPress={() => (navigation as any).navigate("Schedule")}>
+              <ThemedText type="small" style={{ color: theme.primary }}>Открыть</ThemedText>
+            </Pressable>
           </View>
+
+          <Card style={styles.scheduleCard}>
+            {schedulePreview.length === 0 ? (
+              <ThemedText style={{ textAlign: "center", color: theme.textSecondary }}>
+                На сегодня уроков нет
+              </ThemedText>
+            ) : (
+              <View style={{ gap: 10 }}>
+                {schedulePreview.map((item: any, idx: number) => (
+                  <View
+                    key={`${item.subject}-${item.startTime}-${idx}`}
+                    style={[styles.scheduleRow, { borderBottomColor: `${theme.border}55` }]}
+                  >
+                    <View style={styles.scheduleTimeCol}>
+                      <ThemedText style={styles.scheduleTime}>{item.startTime}</ThemedText>
+                      <ThemedText style={[styles.scheduleTimeSmall, { color: theme.textSecondary }]}>
+                        {item.endTime}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.scheduleInfoCol}>
+                      <ThemedText type="h4" numberOfLines={1}>{item.subject}</ThemedText>
+                      <ThemedText numberOfLines={1} style={{ color: theme.textSecondary }}>
+                        {item.teacher || "—"}
+                      </ThemedText>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+            {todaySchedule.length > schedulePreview.length && (
+              <ThemedText type="caption" style={{ color: theme.textSecondary, marginTop: 12, textAlign: "center" }}>
+                Ещё уроков: {todaySchedule.length - schedulePreview.length}
+              </ThemedText>
+            )}
+          </Card>
         </Animated.View>
       </ScrollView>
     </View>
   );
 }
-
-// ========== АНИМИРОВАННАЯ КАРТОЧКА ДЕЙСТВИЯ ==========
-const AnimatedActionCard = ({ action, index, theme, delay }: { 
-  action: any; 
-  index: number; 
-  theme: any;
-  delay: number;
-}) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-  
-  const handlePressIn = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 0.92,
-        useNativeDriver: true,
-      }),
-      Animated.timing(rotateAnim, {
-        toValue: 1,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-  
-  const handlePressOut = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 3,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-      Animated.timing(rotateAnim, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const iconRotate = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '10deg'],
-  });
-  
-  return (
-    <Animated.View style={{ 
-      width: "47%", 
-      transform: [{ scale: scaleAnim }],
-    }}>
-      <Pressable
-        onPress={action.onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={[styles.actionCard, { backgroundColor: theme.backgroundDefault, width: "100%" }]}
-      >
-        <Animated.View 
-          style={[
-            styles.actionIcon, 
-            { 
-              backgroundColor: action.color + "20",
-              transform: [{ rotate: iconRotate }],
-            }
-          ]}
-        >
-          <ThemedText style={styles.actionEmoji}>{action.emoji}</ThemedText>
-        </Animated.View>
-        <ThemedText style={styles.actionLabel} numberOfLines={2}>
-          {action.label}
-        </ThemedText>
-      </Pressable>
-    </Animated.View>
-  );
-};
 
 // ========== HELPER FUNCTIONS ==========
 function getRoleColor(role?: string) {
@@ -801,6 +627,33 @@ const styles = StyleSheet.create({
   actionsSection: {
     marginBottom: Spacing.xl,
   },
+  scheduleCard: {
+    padding: Spacing.lg,
+  },
+  scheduleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+  },
+  scheduleTimeCol: {
+    width: 64,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingRight: Spacing.sm,
+  },
+  scheduleTime: {
+    fontWeight: "800",
+    fontSize: 14,
+  },
+  scheduleTimeSmall: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  scheduleInfoCol: {
+    flex: 1,
+    paddingLeft: Spacing.sm,
+  },
   actionsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -835,6 +688,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     flex: 1,
     flexWrap: "wrap",
+  },
+  
+  // Неоновые карточки действий
+  neonActionCard: {
+    width: "47%",
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+    backgroundColor: NEON.bgCard,
+  },
+  neonActionGradient: {
+    padding: 16,
+    alignItems: 'center',
+    minHeight: 90,
+    justifyContent: 'center',
+    gap: 8,
+  },
+  neonActionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: NEON.textPrimary,
+    textAlign: 'center',
   },
   
   // ========== НЕОНОВЫЕ СТИЛИ ==========
@@ -897,6 +772,11 @@ const styles = StyleSheet.create({
   },
   greetingInfo: {
     flex: 1,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
   },
   neonGreetingTitle: {
     fontSize: 20,

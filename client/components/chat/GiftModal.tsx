@@ -15,22 +15,23 @@ import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/ThemedText';
+import { NEON_COLORS } from '@/constants/neonTheme';
 
 const { width } = Dimensions.get('window');
 
-// НЕОНОВЫЕ ЦВЕТА
+// НЕОНОВАЯ ТЕМА (единый источник правды)
 const NEON = {
-  primary: '#8B5CF6',
-  secondary: '#4ECDC4',
-  accent: '#FF6B9D',
-  warning: '#FFD93D',
-  success: '#6BCB77',
-  error: '#FF6B6B',
-  bgDark: '#0A0A0F',
-  bgCard: '#141420',
-  bgSecondary: '#1A1A2E',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#A0A0B0',
+  primary: NEON_COLORS.primary,
+  secondary: NEON_COLORS.secondary,
+  accent: NEON_COLORS.pink,
+  warning: NEON_COLORS.warning,
+  success: NEON_COLORS.success,
+  error: NEON_COLORS.error,
+  bgDark: NEON_COLORS.backgroundDark,
+  bgCard: NEON_COLORS.backgroundCard,
+  bgSecondary: NEON_COLORS.backgroundSecondary,
+  textPrimary: NEON_COLORS.textPrimary,
+  textSecondary: NEON_COLORS.textSecondary,
 };
 
 // Подарки для отправки (как в Telegram)
@@ -77,6 +78,7 @@ interface GiftModalProps {
   onSendGift: (gift: typeof GIFTS[0], message: string) => void;
   userStars: number;
   recipientName: string;
+  isCeo?: boolean;
 }
 
 const GiftItem: React.FC<{
@@ -84,10 +86,11 @@ const GiftItem: React.FC<{
   selected: boolean;
   onSelect: () => void;
   userStars: number;
-}> = ({ gift, selected, onSelect, userStars }) => {
+  isCeo?: boolean;
+}> = ({ gift, selected, onSelect, userStars, isCeo }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
-  const canAfford = userStars >= gift.price;
+  const canAfford = !!isCeo || userStars >= gift.price;
   
   useEffect(() => {
     if (gift.rarity === 'legendary' || gift.rarity === 'epic') {
@@ -183,7 +186,8 @@ export default function GiftModal({
   onClose, 
   onSendGift, 
   userStars, 
-  recipientName 
+  recipientName,
+  isCeo,
 }: GiftModalProps) {
   const [selectedGift, setSelectedGift] = useState<typeof GIFTS[0] | null>(null);
   const [message, setMessage] = useState('');
@@ -207,7 +211,7 @@ export default function GiftModal({
   const handleSend = async () => {
     if (!selectedGift) return;
     
-    if (userStars < selectedGift.price) {
+    if (!isCeo && userStars < selectedGift.price) {
       Alert.alert('Недостаточно звёзд', `Нужно ещё ${selectedGift.price - userStars} ⭐`);
       return;
     }
@@ -270,6 +274,7 @@ export default function GiftModal({
                   selected={selectedGift?.id === gift.id}
                   onSelect={() => setSelectedGift(gift)}
                   userStars={userStars}
+                  isCeo={isCeo}
                 />
               ))}
             </View>

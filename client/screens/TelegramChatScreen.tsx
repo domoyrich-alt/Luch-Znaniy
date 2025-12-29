@@ -38,15 +38,31 @@ import {
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { getApiUrl } from '@/lib/query-client';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import { Audio, ResizeMode, Video } from 'expo-av';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { TelegramInChatSearch } from '@/components/chat/TelegramInChatSearch';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import ReanimatedLib, { 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withSpring, 
+  withTiming,
+  withSequence,
+  withDelay,
+  runOnJS,
+  interpolate,
+  Extrapolate,
+} from 'react-native-reanimated';
 import GiftModal from '@/components/chat/GiftModal';
 import DoubleTapLike from '@/components/chat/DoubleTapLike';
 import ConfettiEffect from '@/components/chat/ConfettiEffect';
+import VideoNoteRecorder from '@/components/chat/VideoNoteRecorder';
 import { BlurView } from 'expo-blur';
 import { Modal } from 'react-native';
 import { useTheme } from '@/hooks/useTheme';
@@ -68,6 +84,37 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MESSAGE_POOL_SIZE = 100; // Максимум сообщений в памяти
 
+// ==================== DATE SEPARATOR ====================
+
+interface DateSeparatorProps {
+  date: Date;
+}
+
+const DateSeparator = memo(function DateSeparator({ date }: DateSeparatorProps) {
+  const formatDate = (d: Date) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 86400000);
+    const messageDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    
+    if (messageDay.getTime() === today.getTime()) {
+      return 'Сегодня';
+    } else if (messageDay.getTime() === yesterday.getTime()) {
+      return 'Вчера';
+    } else {
+      return d.toLocaleDateString('ru', { day: 'numeric', month: 'long' });
+    }
+  };
+
+  return (
+    <View style={styles.dateSeparator}>
+      <View style={styles.dateSeparatorBadge}>
+        <ThemedText style={styles.dateSeparatorText}>{formatDate(date)}</ThemedText>
+      </View>
+    </View>
+  );
+});
+
 // ==================== REACTION EMOJIS ====================
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '💯'];
@@ -84,15 +131,18 @@ const StatusIcon = memo(function StatusIcon({ status, isOwn }: StatusIconProps) 
   
   switch (status) {
     case 'sending':
-      return <Feather name="clock" size={14} color="rgba(255,255,255,0.7)" />;
+      return <Feather name="clock" size={14} color="rgba(255,255,255,0.5)" />;
     case 'sent':
-      return <Feather name="check" size={14} color="rgba(255,255,255,0.7)" />;
+      // Одна галочка — отправлено, но не доставлено
+      return <Feather name="check" size={14} color="rgba(255,255,255,0.5)" />;
     case 'delivered':
-      return <MaterialCommunityIcons name="check-all" size={14} color="rgba(255,255,255,0.7)" />;
+      // Две серые галочки — доставлено, но не прочитано
+      return <MaterialCommunityIcons name="check-all" size={16} color="rgba(255,255,255,0.5)" />;
     case 'read':
-      return <MaterialCommunityIcons name="check-all" size={14} color="#4ECDC4" />;
+      // Две белые/синие галочки — прочитано
+      return <MaterialCommunityIcons name="check-all" size={16} color="#34C759" />;
     case 'failed':
-      return <Feather name="alert-circle" size={14} color="#FF6B6B" />;
+      return <Feather name="alert-circle" size={14} color="#FF453A" />;
     default:
       return null;
   }
@@ -104,10 +154,13 @@ interface MessageBubbleProps {
   message: Message;
   isOwn: boolean;
   showAvatar: boolean;
+  groupPosition: 'single' | 'first' | 'middle' | 'last';
+  isHighlighted?: boolean;
   onLongPress: (message: Message) => void;
   onReactionPress: (messageId: string, emoji: string) => void;
   onReplyPress: (message: Message) => void;
   onDoubleTap: (message: Message) => void;
+  onSwipeReply: (message: Message) => void;
   theme: any;
 }
 
@@ -115,14 +168,95 @@ const MessageBubble = memo(function MessageBubble({
   message,
   isOwn,
   showAvatar,
+  groupPosition,
+  isHighlighted,
   onLongPress,
   onReactionPress,
   onReplyPress,
   onDoubleTap,
+  onSwipeReply,
   theme,
 }: MessageBubbleProps) {
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Swipe-to-reply gesture
+  const translateX = useSharedValue(0);
+  const replyIconOpacity = useSharedValue(0);
+  const highlightOpacity = useSharedValue(0);
+  const SWIPE_THRESHOLD = 60;
+
+  // Динамические радиусы для группировки (Telegram-style)
+  const getBubbleRadius = () => {
+    const baseRadius = 18;
+    const smallRadius = 6;
+    
+    if (isOwn) {
+      // Свои сообщения - справа
+      switch (groupPosition) {
+        case 'first': return { borderTopLeftRadius: baseRadius, borderTopRightRadius: baseRadius, borderBottomLeftRadius: baseRadius, borderBottomRightRadius: smallRadius };
+        case 'middle': return { borderTopLeftRadius: baseRadius, borderTopRightRadius: smallRadius, borderBottomLeftRadius: baseRadius, borderBottomRightRadius: smallRadius };
+        case 'last': return { borderTopLeftRadius: baseRadius, borderTopRightRadius: smallRadius, borderBottomLeftRadius: baseRadius, borderBottomRightRadius: baseRadius };
+        default: return { borderTopLeftRadius: baseRadius, borderTopRightRadius: baseRadius, borderBottomLeftRadius: baseRadius, borderBottomRightRadius: smallRadius };
+      }
+    } else {
+      // Чужие сообщения - слева
+      switch (groupPosition) {
+        case 'first': return { borderTopLeftRadius: baseRadius, borderTopRightRadius: baseRadius, borderBottomLeftRadius: smallRadius, borderBottomRightRadius: baseRadius };
+        case 'middle': return { borderTopLeftRadius: smallRadius, borderTopRightRadius: baseRadius, borderBottomLeftRadius: smallRadius, borderBottomRightRadius: baseRadius };
+        case 'last': return { borderTopLeftRadius: smallRadius, borderTopRightRadius: baseRadius, borderBottomLeftRadius: baseRadius, borderBottomRightRadius: baseRadius };
+        default: return { borderTopLeftRadius: baseRadius, borderTopRightRadius: baseRadius, borderBottomLeftRadius: smallRadius, borderBottomRightRadius: baseRadius };
+      }
+    }
+  };
+
+  // Подсветка при выборе/ответе (reanimated)
+  useEffect(() => {
+    if (isHighlighted) {
+      highlightOpacity.value = withSequence(
+        withTiming(1, { duration: 200 }),
+        withDelay(800, withTiming(0, { duration: 400 }))
+      );
+    }
+  }, [isHighlighted]);
+
+  const highlightStyle = useAnimatedStyle(() => ({
+    backgroundColor: `rgba(139, 92, 246, ${highlightOpacity.value * 0.3})`,
+  }));
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX(20)
+    .failOffsetY([-15, 15])
+    .onUpdate((event) => {
+      const tx = isOwn ? Math.min(0, event.translationX) : Math.max(0, event.translationX);
+      translateX.value = tx;
+      replyIconOpacity.value = interpolate(
+        Math.abs(tx),
+        [0, SWIPE_THRESHOLD],
+        [0, 1],
+        Extrapolate.CLAMP
+      );
+    })
+    .onEnd((event) => {
+      const triggered = Math.abs(translateX.value) >= SWIPE_THRESHOLD;
+      if (triggered) {
+        runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Medium);
+        runOnJS(onSwipeReply)(message);
+      }
+      translateX.value = withSpring(0, { damping: 20, stiffness: 300 });
+      replyIconOpacity.value = withTiming(0, { duration: 150 });
+    });
+
+  const bubbleAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const replyIconStyle = useAnimatedStyle(() => ({
+    opacity: replyIconOpacity.value,
+    transform: [
+      { scale: interpolate(replyIconOpacity.value, [0, 1], [0.5, 1], Extrapolate.CLAMP) },
+    ],
+  }));
 
   useEffect(() => {
     Animated.parallel([
@@ -219,46 +353,84 @@ const MessageBubble = memo(function MessageBubble({
       );
     }
 
+    if ((message.mediaType === 'video' || (message as any).type === 'video') && message.mediaUrl) {
+      const duration = message.mediaDuration || 0;
+      const durationText = `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}`;
+      
+      return (
+        <Pressable style={styles.videoNoteContainer}>
+          <View style={styles.videoNoteCircle}>
+            <Video
+              source={{ uri: message.mediaUrl }}
+              style={styles.videoNote}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={false}
+              useNativeControls={false}
+              isLooping={false}
+            />
+            {/* Иконка воспроизведения */}
+            <View style={styles.videoPlayOverlay}>
+              <Feather name="play" size={28} color="#fff" />
+            </View>
+          </View>
+          {/* Бейдж длительности как в Telegram */}
+          <View style={styles.videoNoteDuration}>
+            <ThemedText style={styles.videoNoteDurationText}>{durationText}</ThemedText>
+          </View>
+        </Pressable>
+      );
+    }
+
     if (message.type === 'voice') {
+      // Generate consistent waveform based on message id
+      const seed = parseInt(message.id.replace(/\D/g, '').slice(0, 6)) || 12345;
+      const waveformData = Array.from({ length: 40 }, (_, i) => {
+        const wave = Math.sin((seed + i * 0.5) * 0.3) * 0.4 + 0.5;
+        const random = ((seed * (i + 1)) % 100) / 100;
+        return Math.max(0.15, Math.min(1, wave * 0.6 + random * 0.4));
+      });
+      
+      const duration = message.mediaDuration || 0;
+      
       return (
         <View style={styles.voiceMessage}>
           <Pressable 
             style={[
-              styles.playButton, 
-              { backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : theme.primary + '20' }
+              styles.voicePlayButton, 
+              { backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : '#3390EC' }
             ]}
           >
             <Feather 
               name="play" 
               size={18} 
-              color={isOwn ? '#fff' : theme.primary} 
+              color="#fff" 
+              style={{ marginLeft: 2 }}
             />
           </Pressable>
-          <View style={styles.waveform}>
-            {[...Array(20)].map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.waveformBar,
-                  { 
-                    height: Math.random() * 20 + 5,
-                    backgroundColor: isOwn ? 'rgba(255,255,255,0.5)' : theme.primary + '50',
-                  },
-                ]}
-              />
-            ))}
+          <View style={styles.voiceWaveformContainer}>
+            <View style={styles.waveform}>
+              {waveformData.map((height, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.waveformBar,
+                    { 
+                      height: height * 20 + 4,
+                      backgroundColor: isOwn ? 'rgba(255,255,255,0.7)' : '#3390EC',
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+            <ThemedText 
+              style={[
+                styles.voiceDuration, 
+                { color: isOwn ? 'rgba(255,255,255,0.85)' : '#8E8E93' }
+              ]}
+            >
+              {`${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}`}
+            </ThemedText>
           </View>
-          <ThemedText 
-            style={[
-              styles.voiceDuration, 
-              { color: isOwn ? 'rgba(255,255,255,0.7)' : theme.textSecondary }
-            ]}
-          >
-            {message.mediaDuration 
-              ? `${Math.floor(message.mediaDuration / 60)}:${(message.mediaDuration % 60).toString().padStart(2, '0')}`
-              : '0:00'
-            }
-          </ThemedText>
         </View>
       );
     }
@@ -314,13 +486,28 @@ const MessageBubble = memo(function MessageBubble({
   };
 
   return (
-    <Animated.View
+    <ReanimatedLib.View
       style={[
         styles.messageWrapper,
         isOwn ? styles.ownMessageWrapper : styles.otherMessageWrapper,
-        { opacity: fadeAnim, transform: [{ scale: scaleAnim }] },
+        { 
+          marginVertical: groupPosition === 'middle' || groupPosition === 'last' ? 1 : 3,
+        },
+        highlightStyle,
       ]}
     >
+      <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }], flex: 1, flexDirection: 'row', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
+      {/* Reply Icon (appears on swipe) */}
+      <ReanimatedLib.View
+        style={[
+          styles.swipeReplyIcon,
+          isOwn ? styles.swipeReplyIconLeft : styles.swipeReplyIconRight,
+          replyIconStyle,
+        ]}
+      >
+        <Feather name="corner-up-left" size={20} color="#8B5CF6" />
+      </ReanimatedLib.View>
+
       {/* Аватар */}
       {showAvatar && !isOwn && (
         <View style={[styles.messageAvatar, { backgroundColor: theme.primary }]}>
@@ -329,26 +516,26 @@ const MessageBubble = memo(function MessageBubble({
           </ThemedText>
         </View>
       )}
+      {/* Placeholder для аватара когда не показан */}
+      {!showAvatar && !isOwn && <View style={{ width: 44 }} />}
 
-      {/* Пузырь */}
-      <DoubleTapLike
-        onDoubleTap={() => onDoubleTap(message)}
-        onLongPress={handleLongPress}
-      >
-        <LinearGradient
-          colors={isOwn 
-            ? [theme.primary, theme.primary + 'DD'] 
-            : [theme.backgroundSecondary, theme.backgroundSecondary]
-          }
+      {/* Пузырь с жестом свайпа */}
+      <GestureDetector gesture={panGesture}>
+        <ReanimatedLib.View style={bubbleAnimatedStyle}>
+          <DoubleTapLike
+            onDoubleTap={() => onDoubleTap(message)}
+            onLongPress={handleLongPress}
+          >
+            <View
           style={[
             styles.messageBubble,
             isOwn ? styles.ownBubble : styles.otherBubble,
-            showAvatar && !isOwn && styles.bubbleWithAvatar,
+            getBubbleRadius(),
           ]}
         >
-          {/* Имя отправителя (для групп) */}
-          {showAvatar && !isOwn && message.senderName && (
-            <ThemedText style={[styles.senderName, { color: theme.primary }]}>
+          {/* Имя отправителя (только для первого в группе) */}
+          {groupPosition === 'first' && !isOwn && message.senderName && (
+            <ThemedText style={[styles.senderName, { color: '#5AABE5' }]}>
               {message.senderName}
             </ThemedText>
           )}
@@ -362,14 +549,14 @@ const MessageBubble = memo(function MessageBubble({
           {/* Текст */}
           {message.text && (
             <ThemedText 
-              style={[styles.messageText, { color: isOwn ? '#fff' : theme.text }]}
+              style={[styles.messageText, { color: '#FFFFFF' }]}
             >
               {message.text}
               {message.isEdited && (
                 <ThemedText 
                   style={[
                     styles.editedLabel, 
-                    { color: isOwn ? 'rgba(255,255,255,0.6)' : theme.textSecondary }
+                    { color: 'rgba(255,255,255,0.5)' }
                   ]}
                 >
                   {' (ред.)'}
@@ -381,21 +568,21 @@ const MessageBubble = memo(function MessageBubble({
           {/* Футер: время + статус */}
           <View style={styles.messageFooter}>
             <ThemedText 
-              style={[
-                styles.messageTime, 
-                { color: isOwn ? 'rgba(255,255,255,0.7)' : theme.textSecondary }
-              ]}
+              style={styles.messageTime}
             >
               {formatTime(message.createdAt)}
             </ThemedText>
             <StatusIcon status={message.status} isOwn={isOwn} />
           </View>
-        </LinearGradient>
+        </View>
 
         {/* Реакции */}
         {renderReactions()}
-      </DoubleTapLike>
-    </Animated.View>
+          </DoubleTapLike>
+        </ReanimatedLib.View>
+      </GestureDetector>
+      </Animated.View>
+    </ReanimatedLib.View>
   );
 });
 
@@ -549,9 +736,9 @@ const ReactionPicker = memo(function ReactionPicker({
 // ==================== MAIN CHAT SCREEN ====================
 
 interface ChatParams {
-  chatId: number;
-  otherUserId: number;
-  otherUserName: string;
+  chatId?: string | number;
+  otherUserId?: number;
+  otherUserName?: string;
   phoneNumber?: string;
   chatType?: 'private' | 'group';
 }
@@ -573,8 +760,9 @@ export default function TelegramChatScreen() {
   const initialChatId = params?.chatId;
   
   // Реальный chatId из базы данных - используем переданный или ждём создания
+  const isVirtualChatId = typeof initialChatId === 'string' && initialChatId.startsWith('private_');
   const [realChatId, setRealChatId] = useState<string | null>(
-    initialChatId ? initialChatId.toString() : null
+    initialChatId && !isVirtualChatId ? initialChatId.toString() : null
   );
 
   // Store
@@ -603,7 +791,49 @@ export default function TelegramChatScreen() {
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [giftModalVisible, setGiftModalVisible] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showVideoRecorder, setShowVideoRecorder] = useState(false);
+  const [showNewMessagesBadge, setShowNewMessagesBadge] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showScrollDownButton, setShowScrollDownButton] = useState(false);
+  const isAtBottomRef = useRef(true);
   const recordingInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Bottom Sheet animation
+  const bottomSheetTranslateY = useSharedValue(SCREEN_HEIGHT);
+  const bottomSheetOpacity = useSharedValue(0);
+
+  const [recordMode, setRecordMode] = useState<'voice' | 'video'>('voice');
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdTriggeredRef = useRef(false);
+  const audioRecordingRef = useRef<Audio.Recording | null>(null);
+
+  const cancelRecording = useCallback(async () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+
+    holdTriggeredRef.current = false;
+    setIsRecording(false);
+
+    if (recordingInterval.current) {
+      clearInterval(recordingInterval.current);
+      recordingInterval.current = null;
+    }
+
+    try {
+      const recording = audioRecordingRef.current;
+      audioRecordingRef.current = null;
+      if (recording) {
+        await recording.stopAndUnloadAsync();
+      }
+    } catch {
+      // ignore
+    } finally {
+      setRecordingDuration(0);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }
+  }, []);
 
   const isLoading = loadingChats.has(realChatId || '');
   const chat = getChatById(realChatId || '');
@@ -613,11 +843,12 @@ export default function TelegramChatScreen() {
     let isMounted = true;
     
     const initChat = async () => {
-      if (!user?.id || !otherUserId || realChatId) return;
+      if (!user?.id || !otherUserId || (realChatId && !realChatId.startsWith('private_'))) return;
       
       try {
         // Создаём или получаем существующий чат
-        const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.110:5000'}/api/chats/private`, {
+        const API_URL = getApiUrl();
+        const response = await fetch(`${API_URL}/api/chats/private`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user1Id: user.id, user2Id: otherUserId }),
@@ -643,10 +874,10 @@ export default function TelegramChatScreen() {
   
   // Загружаем сообщения когда есть реальный chatId (только один раз)
   useEffect(() => {
-    if (realChatId && messages.length === 0) {
+    if (realChatId && !realChatId.startsWith('private_') && messages.length === 0) {
       loadMessages(realChatId);
     }
-    if (realChatId && user?.id) {
+    if (realChatId && !realChatId.startsWith('private_') && user?.id) {
       markAsRead(realChatId, user.id);
     }
   }, [realChatId]);
@@ -699,12 +930,47 @@ export default function TelegramChatScreen() {
   const prevMessagesLength = useRef(messages.length);
   useEffect(() => {
     if (messages.length > prevMessagesLength.current) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      const newMsgCount = messages.length - prevMessagesLength.current;
+      
+      // Если пользователь внизу - скроллим к новым сообщениям
+      if (isAtBottomRef.current) {
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      } else {
+        // Показываем бейдж "новые сообщения"
+        setUnreadCount(prev => prev + newMsgCount);
+        setShowNewMessagesBadge(true);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
     }
     prevMessagesLength.current = messages.length;
   }, [messages.length]);
+
+  // Отслеживаем позицию скролла
+  const handleScroll = useCallback((event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const paddingToBottom = 100;
+    const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+    isAtBottomRef.current = isAtBottom;
+    
+    // Показываем кнопку "вниз" при скролле вверх
+    const scrolledUp = contentOffset.y < contentSize.height - layoutMeasurement.height - 300;
+    setShowScrollDownButton(scrolledUp && !isAtBottom);
+    
+    if (isAtBottom && showNewMessagesBadge) {
+      setShowNewMessagesBadge(false);
+      setUnreadCount(0);
+    }
+  }, [showNewMessagesBadge]);
+
+  // Скролл к новым сообщениям при нажатии на бейдж
+  const scrollToBottom = useCallback(() => {
+    flatListRef.current?.scrollToEnd({ animated: true });
+    setShowNewMessagesBadge(false);
+    setUnreadCount(0);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
 
   // Обработчики
   const handleSend = useCallback(async () => {
@@ -732,12 +998,11 @@ export default function TelegramChatScreen() {
     if (realChatId) {
       try {
         await sendMessage(realChatId, messageData);
-        earnStars(1, 'Сообщение');
       } catch {
         // ошибки отправки уже обрабатываются внутри sendMessage / store
       }
     }
-  }, [inputText, user, replyTo, realChatId, sendMessage, earnStars]);
+  }, [inputText, user, replyTo, realChatId, sendMessage]);
 
   const handleLongPress = useCallback((message: Message, event?: any) => {
     setSelectedMessage(message);
@@ -816,6 +1081,24 @@ export default function TelegramChatScreen() {
 
   const handleReplyPress = useCallback((message: Message) => {
     setReplyTo(message);
+    // Подсветка сообщения при ответе
+    setHighlightedMessageId(message.id);
+    setTimeout(() => setHighlightedMessageId(null), 1500);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  // Bottom Sheet handlers - быстрое открытие без долгой анимации
+  const openBottomSheet = useCallback(() => {
+    setShowAttachMenu(true);
+    bottomSheetTranslateY.value = withTiming(0, { duration: 200 });
+    bottomSheetOpacity.value = withTiming(1, { duration: 150 });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  const closeBottomSheet = useCallback(() => {
+    bottomSheetTranslateY.value = withTiming(SCREEN_HEIGHT, { duration: 180 });
+    bottomSheetOpacity.value = withTiming(0, { duration: 120 });
+    setTimeout(() => setShowAttachMenu(false), 150);
   }, []);
 
   // Двойной тап для лайка ❤️
@@ -826,21 +1109,95 @@ export default function TelegramChatScreen() {
   }, [user?.id, addReaction]);
 
   const handleLoadMore = useCallback(() => {
-    if (messages.length > 0 && !isLoading && realChatId) {
+    if (messages.length > 0 && !isLoading && realChatId && !realChatId.startsWith('private_')) {
       loadMessages(realChatId, 50, messages[0].id);
     }
   }, [messages, isLoading, realChatId, loadMessages]);
 
   // Обработчики прикрепления файлов
+  const uploadFile = useCallback(async (fileUri: string, fileName: string) => {
+    const API_URL = getApiUrl();
+    const formData = new FormData();
+
+    // @ts-ignore
+    formData.append('file', {
+      uri: fileUri,
+      name: fileName,
+      type: 'application/octet-stream',
+    });
+
+    const response = await fetch(`${API_URL}/api/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error('Upload failed');
+    }
+
+    const result = await response.json();
+    const fileUrl: string = result.fileUrl;
+    return {
+      fileUrl: fileUrl.startsWith('http') ? fileUrl : `${API_URL}${fileUrl}`,
+      fileName: result.fileName as string,
+      fileSize: result.fileSize as number,
+      mimeType: result.mimeType as string,
+    };
+  }, []);
+
+  const pickAndSendPhoto = useCallback(async (source: 'camera' | 'library') => {
+    if (!realChatId || realChatId.startsWith('private_') || !user?.id) return;
+
+    const permission = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert('Нет доступа', 'Нужно разрешение на фото/камеру');
+      return;
+    }
+
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.9,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.9,
+        });
+
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    const asset = result.assets[0];
+    const uri = asset.uri;
+    const fileName = asset.fileName || `photo_${Date.now()}.jpg`;
+
+    try {
+      const uploaded = await uploadFile(uri, fileName);
+      await sendMessage(realChatId, {
+        senderId: user.id,
+        senderName: (user as any).username || (user as any).firstName || 'Я',
+        type: 'image',
+        mediaType: 'photo',
+        mediaUrl: uploaded.fileUrl,
+        mediaFileName: uploaded.fileName || fileName,
+        mediaSize: uploaded.fileSize,
+      });
+    } catch (e) {
+      Alert.alert('Ошибка', 'Не удалось отправить фото');
+    }
+  }, [realChatId, user?.id, sendMessage, uploadFile]);
+
   const handleAttachPhoto = useCallback(() => {
     setShowAttachMenu(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert('📷 Фото', 'Выберите источник', [
-      { text: 'Камера', onPress: () => Alert.alert('Камера', 'Открывается камера...') },
-      { text: 'Галерея', onPress: () => Alert.alert('Галерея', 'Открывается галерея...') },
+      { text: 'Камера', onPress: () => pickAndSendPhoto('camera') },
+      { text: 'Галерея', onPress: () => pickAndSendPhoto('library') },
       { text: 'Отмена', style: 'cancel' },
     ]);
-  }, []);
+  }, [pickAndSendPhoto]);
 
   const handleAttachFile = useCallback(() => {
     setShowAttachMenu(false);
@@ -866,41 +1223,149 @@ export default function TelegramChatScreen() {
     ]);
   }, []);
 
-  // Запись голосового сообщения
-  const startRecording = useCallback(() => {
-    setIsRecording(true);
-    setRecordingDuration(0);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    recordingInterval.current = setInterval(() => {
-      setRecordingDuration(prev => prev + 1);
-    }, 1000);
-  }, []);
+  const beginVoiceRecording = useCallback(async () => {
+    if (isRecording) return;
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Нет доступа', 'Нужно разрешение на микрофон');
+        return;
+      }
 
-  const stopRecording = useCallback(() => {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      setIsRecording(true);
+      setRecordingDuration(0);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+      recordingInterval.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      audioRecordingRef.current = recording;
+    } catch (e) {
+      setIsRecording(false);
+      if (recordingInterval.current) {
+        clearInterval(recordingInterval.current);
+        recordingInterval.current = null;
+      }
+      Alert.alert('Ошибка', 'Не удалось начать запись');
+    }
+  }, [isRecording]);
+
+  const finishVoiceRecordingAndSend = useCallback(async () => {
+    if (!isRecording) return;
     setIsRecording(false);
+
     if (recordingInterval.current) {
       clearInterval(recordingInterval.current);
       recordingInterval.current = null;
     }
-    if (recordingDuration > 0) {
+
+    const recording = audioRecordingRef.current;
+    audioRecordingRef.current = null;
+
+    try {
+      if (!recording) return;
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      if (!uri) return;
+
+      if (!realChatId || realChatId.startsWith('private_') || !user?.id) return;
+
+      const fileName = `voice_${Date.now()}.m4a`;
+      const uploaded = await uploadFile(uri, fileName);
+      await sendMessage(realChatId, {
+        senderId: user.id,
+        senderName: (user as any).username || (user as any).firstName || 'Я',
+        type: 'voice',
+        mediaType: 'voice',
+        mediaUrl: uploaded.fileUrl,
+        mediaFileName: uploaded.fileName || fileName,
+        mediaSize: uploaded.fileSize,
+        mediaDuration: recordingDuration,
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('🎤 Голосовое', `Записано: ${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, '0')}`, [
-        { text: 'Отправить', onPress: () => console.log('Sending voice...') },
-        { text: 'Отмена', style: 'cancel' },
-      ]);
+    } catch (e) {
+      Alert.alert('Ошибка', 'Не удалось отправить голосовое');
+    } finally {
+      setRecordingDuration(0);
     }
-    setRecordingDuration(0);
-  }, [recordingDuration]);
+  }, [isRecording, realChatId, user?.id, sendMessage, uploadFile, recordingDuration]);
 
-  const cancelRecording = useCallback(() => {
-    setIsRecording(false);
-    if (recordingInterval.current) {
-      clearInterval(recordingInterval.current);
-      recordingInterval.current = null;
-    }
-    setRecordingDuration(0);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  const captureAndSendVideoNote = useCallback(async () => {
+    // Открываем инлайн видео рекордер вместо стандартной камеры
+    setShowVideoRecorder(true);
   }, []);
+
+  // Обработка записанного видео
+  const handleVideoRecorded = useCallback(async (uri: string) => {
+    if (!realChatId || realChatId.startsWith('private_') || !user?.id) return;
+
+    const fileName = `video_note_${Date.now()}.mp4`;
+
+    try {
+      const uploaded = await uploadFile(uri, fileName);
+      await sendMessage(realChatId, {
+        senderId: user.id,
+        senderName: (user as any).username || (user as any).firstName || 'Я',
+        type: 'file',
+        mediaType: 'video',
+        mediaUrl: uploaded.fileUrl,
+        mediaFileName: uploaded.fileName || fileName,
+        mediaSize: uploaded.fileSize,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось отправить видео');
+    }
+  }, [realChatId, user?.id, sendMessage, uploadFile]);
+
+  const toggleRecordMode = useCallback(() => {
+    setRecordMode(prev => (prev === 'voice' ? 'video' : 'voice'));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  const handleRecordPressIn = useCallback(() => {
+    holdTriggeredRef.current = false;
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+
+    holdTimerRef.current = setTimeout(() => {
+      holdTriggeredRef.current = true;
+      if (recordMode === 'voice') {
+        beginVoiceRecording();
+      } else {
+        captureAndSendVideoNote();
+      }
+    }, 220);
+  }, [recordMode, beginVoiceRecording, captureAndSendVideoNote]);
+
+  const handleRecordPressOut = useCallback(() => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+
+    if (recordMode === 'voice' && holdTriggeredRef.current) {
+      finishVoiceRecordingAndSend();
+    }
+  }, [recordMode, finishVoiceRecordingAndSend]);
+
+  const handleRecordPress = useCallback(() => {
+    // Tap: toggle mode (voice <-> video). Hold is handled by timer.
+    if (!holdTriggeredRef.current && !isRecording) {
+      toggleRecordMode();
+    }
+  }, [toggleRecordMode, isRecording]);
 
   const handleCall = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -910,31 +1375,60 @@ export default function TelegramChatScreen() {
     ]);
   }, [otherUserName]);
 
-  // Рендер сообщения
+  // Рендер сообщения с разделителями дат и группировкой
   const renderMessage = useCallback(({ item, index }: { item: Message; index: number }) => {
-    const isOwn = item.senderId === user?.id;
+    // Сравниваем как строки, т.к. senderId и user.id могут быть разных типов (string/number)
+    const isOwn = String(item.senderId) === String(user?.id);
     const prevMessage = messages[index - 1];
-    const showAvatar = !isOwn && (
-      !prevMessage || 
-      prevMessage.senderId !== item.senderId ||
-      item.createdAt - prevMessage.createdAt > 60000
-    );
+    const nextMessage = messages[index + 1];
+    
+    // Группировка сообщений (Telegram-style)
+    const isSameAuthorAsPrev = prevMessage && prevMessage.senderId === item.senderId;
+    const isSameAuthorAsNext = nextMessage && nextMessage.senderId === item.senderId;
+    const timeDiffPrev = prevMessage ? item.createdAt - prevMessage.createdAt : Infinity;
+    const timeDiffNext = nextMessage ? nextMessage.createdAt - item.createdAt : Infinity;
+    
+    // Группируем если: тот же автор + < 1 минуты + нет ответа
+    const isGroupedWithPrev = isSameAuthorAsPrev && timeDiffPrev < 60000 && !item.replyTo;
+    const isGroupedWithNext = isSameAuthorAsNext && timeDiffNext < 60000 && !nextMessage?.replyTo;
+    
+    // Определяем позицию в группе: first, middle, last, single
+    const isFirst = !isGroupedWithPrev;
+    const isLast = !isGroupedWithNext;
+    const groupPosition = isFirst && isLast ? 'single' : isFirst ? 'first' : isLast ? 'last' : 'middle';
+    
+    const showAvatar = !isOwn && isLast;
+    
+    // Проверяем нужен ли разделитель даты
+    const currentDate = new Date(item.createdAt);
+    const prevDate = prevMessage ? new Date(prevMessage.createdAt) : null;
+    const showDateSeparator = !prevDate || 
+      currentDate.toDateString() !== prevDate.toDateString();
+    
+    // Подсветка при поиске/ответе
+    const isHighlighted = highlightedMessageId === item.id;
 
     return (
-      <MessageBubble
-        message={item}
-        isOwn={isOwn}
-        showAvatar={showAvatar}
-        onLongPress={handleLongPress}
-        onReactionPress={(messageId, emoji) => {
-          if (user?.id) addReaction(messageId, emoji, user.id);
-        }}
-        onReplyPress={handleReplyPress}
-        onDoubleTap={handleDoubleTap}
-        theme={theme}
-      />
+      <>
+        {showDateSeparator && <DateSeparator date={currentDate} />}
+        <MessageBubble
+          message={item}
+          isOwn={isOwn}
+          showAvatar={showAvatar}
+          groupPosition={groupPosition}
+          isHighlighted={isHighlighted}
+          onLongPress={handleLongPress}
+          onReactionPress={(messageId, emoji) => {
+            if (user?.id) addReaction(messageId, emoji, user.id);
+          }}
+          onReplyPress={handleReplyPress}
+          onDoubleTap={handleDoubleTap}
+          onSwipeReply={handleReplyPress}
+          theme={theme}
+        />
+      </>
     );
-  }, [user?.id, messages, theme, handleLongPress, addReaction, handleReplyPress, handleDoubleTap]);
+  }, [user?.id, messages, theme, handleLongPress, addReaction, handleReplyPress, handleDoubleTap, highlightedMessageId]);
 
   const keyExtractor = useCallback((item: Message, index: number) => {
     // Гарантируем уникальность ключа
@@ -942,14 +1436,15 @@ export default function TelegramChatScreen() {
   }, []);
 
   return (
-    <ThemedView style={styles.container}>
-      {/* HEADER */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top,
-          },
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemedView style={styles.container}>
+        {/* HEADER */}
+        <View
+          style={[
+            styles.header,
+            {
+              paddingTop: insets.top,
+            },
         ]}
       >
         <Pressable 
@@ -1100,8 +1595,8 @@ export default function TelegramChatScreen() {
       {/* MESSAGES */}
       <KeyboardAvoidingView
         style={styles.messagesContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 56 : 0}
       >
         {!realChatId ? (
           <View style={styles.loadingContainer}>
@@ -1119,6 +1614,8 @@ export default function TelegramChatScreen() {
             inverted={false}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.1}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
             removeClippedSubviews={true}
             maxToRenderPerBatch={15}
             windowSize={10}
@@ -1138,6 +1635,29 @@ export default function TelegramChatScreen() {
               typingUsers.length > 0 ? <TypingIndicator theme={theme} /> : null
             }
           />
+        )}
+
+        {/* NEW MESSAGES BADGE */}
+        {showNewMessagesBadge && (
+          <Pressable 
+            style={styles.newMessagesBadge}
+            onPress={scrollToBottom}
+          >
+            <Feather name="chevron-down" size={16} color="#fff" />
+            <ThemedText style={styles.newMessagesBadgeText}>
+              {unreadCount > 0 ? `${unreadCount} new` : 'New messages'}
+            </ThemedText>
+          </Pressable>
+        )}
+
+        {/* SCROLL DOWN BUTTON - Telegram style */}
+        {showScrollDownButton && !showNewMessagesBadge && (
+          <Pressable 
+            style={styles.scrollDownButton}
+            onPress={scrollToBottom}
+          >
+            <Feather name="chevron-down" size={22} color="#fff" />
+          </Pressable>
         )}
 
         {/* REPLY PREVIEW */}
@@ -1161,34 +1681,98 @@ export default function TelegramChatScreen() {
           </View>
         )}
 
-        {/* ATTACH MENU */}
+        {/* TELEGRAM BOTTOM SHEET ATTACH MENU */}
         {showAttachMenu && (
-          <View style={[styles.attachMenu, { backgroundColor: theme.backgroundDefault }]}>
-            <Pressable style={styles.attachMenuItem} onPress={handleAttachPhoto}>
-              <View style={[styles.attachMenuIcon, { backgroundColor: '#8B5CF6' + '20' }]}>
-                <Feather name="image" size={22} color="#8B5CF6" />
-              </View>
-              <ThemedText style={styles.attachMenuText}>Фото</ThemedText>
+          <>
+            {/* Полупрозрачный фон - тап закрывает */}
+            <Pressable 
+              style={styles.bottomSheetOverlay} 
+              onPress={closeBottomSheet}
+            >
+              <ReanimatedLib.View 
+                style={[styles.bottomSheetBackdrop, { opacity: bottomSheetOpacity }]} 
+              />
             </Pressable>
-            <Pressable style={styles.attachMenuItem} onPress={handleAttachFile}>
-              <View style={[styles.attachMenuIcon, { backgroundColor: '#4ECDC4' + '20' }]}>
-                <Feather name="file" size={22} color="#4ECDC4" />
+            
+            {/* Bottom Sheet с инерцией */}
+            <ReanimatedLib.View 
+              style={[
+                styles.bottomSheet,
+                { 
+                  transform: [{ translateY: bottomSheetTranslateY }],
+                  paddingBottom: Math.max(insets.bottom, 20),
+                },
+              ]}
+            >
+              {/* Ручка для свайпа */}
+              <View style={styles.bottomSheetHandle}>
+                <View style={styles.bottomSheetHandleBar} />
               </View>
-              <ThemedText style={styles.attachMenuText}>Файл</ThemedText>
-            </Pressable>
-            <Pressable style={styles.attachMenuItem} onPress={handleAttachLocation}>
-              <View style={[styles.attachMenuIcon, { backgroundColor: '#FF6B6B' + '20' }]}>
-                <Feather name="map-pin" size={22} color="#FF6B6B" />
+              
+              {/* Сетка опций */}
+              <View style={styles.bottomSheetGrid}>
+                <Pressable 
+                  style={styles.bottomSheetItem} 
+                  onPress={() => { closeBottomSheet(); handleAttachPhoto(); }}
+                >
+                  <View style={[styles.bottomSheetIcon, { backgroundColor: '#8B5CF6' }]}>
+                    <Feather name="image" size={26} color="#fff" />
+                  </View>
+                  <ThemedText style={styles.bottomSheetText}>Фото</ThemedText>
+                </Pressable>
+                
+                <Pressable 
+                  style={styles.bottomSheetItem} 
+                  onPress={() => { closeBottomSheet(); handleAttachFile(); }}
+                >
+                  <View style={[styles.bottomSheetIcon, { backgroundColor: '#4ECDC4' }]}>
+                    <Feather name="file" size={26} color="#fff" />
+                  </View>
+                  <ThemedText style={styles.bottomSheetText}>Файл</ThemedText>
+                </Pressable>
+                
+                <Pressable 
+                  style={styles.bottomSheetItem} 
+                  onPress={() => { closeBottomSheet(); handleAttachLocation(); }}
+                >
+                  <View style={[styles.bottomSheetIcon, { backgroundColor: '#FF6B6B' }]}>
+                    <Feather name="map-pin" size={26} color="#fff" />
+                  </View>
+                  <ThemedText style={styles.bottomSheetText}>Место</ThemedText>
+                </Pressable>
+                
+                <Pressable 
+                  style={styles.bottomSheetItem} 
+                  onPress={() => { closeBottomSheet(); handleAttachContact(); }}
+                >
+                  <View style={[styles.bottomSheetIcon, { backgroundColor: '#FFB347' }]}>
+                    <Feather name="user" size={26} color="#fff" />
+                  </View>
+                  <ThemedText style={styles.bottomSheetText}>Контакт</ThemedText>
+                </Pressable>
+                
+                <Pressable 
+                  style={styles.bottomSheetItem} 
+                  onPress={() => { closeBottomSheet(); captureAndSendVideoNote(); }}
+                >
+                  <View style={[styles.bottomSheetIcon, { backgroundColor: '#3390EC' }]}>
+                    <Feather name="video" size={26} color="#fff" />
+                  </View>
+                  <ThemedText style={styles.bottomSheetText}>Видео</ThemedText>
+                </Pressable>
+                
+                <Pressable 
+                  style={styles.bottomSheetItem} 
+                  onPress={() => { closeBottomSheet(); setGiftModalVisible(true); }}
+                >
+                  <View style={[styles.bottomSheetIcon, { backgroundColor: '#FF6B9D' }]}>
+                    <Feather name="gift" size={26} color="#fff" />
+                  </View>
+                  <ThemedText style={styles.bottomSheetText}>Подарок</ThemedText>
+                </Pressable>
               </View>
-              <ThemedText style={styles.attachMenuText}>Геолокация</ThemedText>
-            </Pressable>
-            <Pressable style={styles.attachMenuItem} onPress={handleAttachContact}>
-              <View style={[styles.attachMenuIcon, { backgroundColor: '#FFB347' + '20' }]}>
-                <Feather name="user" size={22} color="#FFB347" />
-              </View>
-              <ThemedText style={styles.attachMenuText}>Контакт</ThemedText>
-            </Pressable>
-          </View>
+            </ReanimatedLib.View>
+          </>
         )}
 
         {/* RECORDING INDICATOR */}
@@ -1205,7 +1789,7 @@ export default function TelegramChatScreen() {
           </View>
         )}
 
-        {/* INPUT */}
+        {/* INPUT - Telegram December 2025 Style with Glass Effect */}
         <View 
           style={[
             styles.inputContainer, 
@@ -1214,33 +1798,40 @@ export default function TelegramChatScreen() {
             }
           ]}
         >
+          {/* Скрепка в круглом контейнере со стеклянным эффектом */}
           <Pressable 
-            style={styles.inputButton}
             onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowAttachMenu(!showAttachMenu);
+              if (showAttachMenu) {
+                closeBottomSheet();
+              } else {
+                openBottomSheet();
+              }
             }}
           >
-            <Feather name={showAttachMenu ? 'x' : 'paperclip'} size={22} color="#8B5CF6" />
+            <BlurView intensity={40} tint="dark" style={styles.attachButtonGlass}>
+              <Feather name="paperclip" size={22} color="#8E8E93" />
+            </BlurView>
           </Pressable>
 
-          <View style={styles.inputWrapper}>
+          {/* Поле ввода со стеклянным эффектом */}
+          <BlurView intensity={40} tint="dark" style={styles.inputWrapperGlass}>
             <TextInput
               style={styles.textInput}
-              placeholder="Сообщение..."
+              placeholder="Message"
               placeholderTextColor="#8E8E93"
               value={inputText}
               onChangeText={setInputText}
               multiline
               maxLength={4000}
-              onFocus={() => setShowAttachMenu(false)}
+              onFocus={() => { if (showAttachMenu) closeBottomSheet(); }}
             />
             
+            {/* Иконка стикера внутри поля справа */}
             <Pressable 
-              style={styles.inputEmojiButton}
+              style={styles.stickerButton}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                Alert.alert('😊 Эмодзи', 'Выберите эмодзи', [
+                Alert.alert('😊 Стикеры', 'Выберите стикер', [
                   { text: '👍', onPress: () => setInputText(prev => prev + '👍') },
                   { text: '❤️', onPress: () => setInputText(prev => prev + '❤️') },
                   { text: '😂', onPress: () => setInputText(prev => prev + '😂') },
@@ -1248,25 +1839,27 @@ export default function TelegramChatScreen() {
                 ]);
               }}
             >
-              <Feather name="smile" size={22} color="#8E8E93" />
+              <MaterialCommunityIcons name="sticker-emoji" size={24} color="#8E8E93" />
             </Pressable>
-          </View>
+          </BlurView>
 
+          {/* Кнопка отправки или камера/микрофон в квадратной рамке */}
           {inputText.trim() ? (
             <Pressable 
-              style={[styles.sendButton, { backgroundColor: '#8B5CF6' }]}
+              style={styles.sendButton}
               onPress={handleSend}
             >
-              <Feather name="send" size={20} color="#fff" />
+              <Feather name="arrow-up" size={22} color="#fff" />
             </Pressable>
           ) : (
-            <Pressable 
-              style={[styles.inputButton, isRecording && styles.recordingButton]}
-              onPressIn={startRecording}
-              onPressOut={stopRecording}
-              delayLongPress={0}
-            >
-              <Feather name="mic" size={22} color={isRecording ? '#FF6B6B' : '#8B5CF6'} />
+            <Pressable onPressIn={handleRecordPressIn} onPressOut={handleRecordPressOut} onPress={handleRecordPress}>
+              <BlurView intensity={40} tint="dark" style={styles.cameraButtonGlass}>
+                <Feather 
+                  name={recordMode === 'voice' ? 'mic' : 'camera'} 
+                  size={22} 
+                  color="#8E8E93" 
+                />
+              </BlurView>
             </Pressable>
           )}
         </View>
@@ -1310,6 +1903,13 @@ export default function TelegramChatScreen() {
         }}
       />
       
+      {/* VIDEO NOTE RECORDER */}
+      <VideoNoteRecorder
+        visible={showVideoRecorder}
+        onClose={() => setShowVideoRecorder(false)}
+        onVideoRecorded={handleVideoRecorded}
+      />
+      
       {/* CONFETTI EFFECT */}
       <ConfettiEffect 
         active={showConfetti} 
@@ -1317,7 +1917,8 @@ export default function TelegramChatScreen() {
         duration={2500}
         onComplete={() => setShowConfetti(false)} 
       />
-    </ThemedView>
+      </ThemedView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -1390,27 +1991,46 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
 
-  // Messages - Красивый контейнер
+  // Messages - Telegram December 2025 стиль
   messagesContainer: {
     flex: 1,
+    backgroundColor: '#111111', // Чистый чёрный Telegram
   },
   messagesList: {
     flex: 1,
   },
   messagesContent: {
-    paddingVertical: 12,
-    paddingHorizontal: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
   },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#08080C',
+    backgroundColor: '#000000',
   },
   loadingMore: {
     padding: 20,
     alignItems: 'center',
   },
+  
+  // Date Separator - Telegram December 2025
+  dateSeparator: {
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  dateSeparatorBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  dateSeparatorText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#FFFFFF99',
+  },
+  
   emptyChat: {
     flex: 1,
     alignItems: 'center',
@@ -1445,11 +2065,29 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.5)',
   },
 
-  // Message Wrapper
+  // Swipe Reply Icon
+  swipeReplyIcon: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
+  swipeReplyIconLeft: {
+    left: 12,
+  },
+  swipeReplyIconRight: {
+    right: 12,
+  },
+
+  // Message Wrapper - Telegram December 2025
   messageWrapper: {
     flexDirection: 'row',
-    paddingHorizontal: 12,
-    marginVertical: 3,
+    paddingHorizontal: 8,
+    marginVertical: 1,
   },
   ownMessageWrapper: {
     justifyContent: 'flex-end',
@@ -1458,119 +2096,125 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   messageAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#3390EC', // Telegram blue avatar
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 8,
     alignSelf: 'flex-end',
-    shadowColor: '#8B5CF6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   messageAvatarText: {
-    color: '#fff',
-    fontSize: 14,
+    color: '#FFF',
+    fontSize: 15,
     fontWeight: '700',
   },
 
-  // Message Bubble - Красивые пузырьки
+  // Message Bubble - Telegram December 2025 iOS style
   messageBubble: {
-    maxWidth: SCREEN_WIDTH * 0.75,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    maxWidth: SCREEN_WIDTH * 0.78,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 18,
   },
   ownBubble: {
+    backgroundColor: '#007AFF', // iOS blue как в Telegram
     borderBottomRightRadius: 6,
-    shadowColor: '#8B5CF6',
-    shadowOpacity: 0.2,
+    alignSelf: 'flex-end',
+    marginLeft: 50,
   },
   otherBubble: {
+    backgroundColor: '#252528', // Тёмно-серый для входящих
     borderBottomLeftRadius: 6,
+    alignSelf: 'flex-start',
   },
   bubbleWithAvatar: {
     marginLeft: 0,
   },
   senderName: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#3390EC', // Telegram blue
     marginBottom: 4,
   },
   messageText: {
-    fontSize: 16,
+    fontSize: 16.5,
     lineHeight: 22,
-    letterSpacing: -0.2,
+    color: '#FFFFFF',
   },
   editedLabel: {
-    fontSize: 12,
-    fontStyle: 'italic',
+    fontSize: 13,
+    color: '#FFFFFF80',
   },
   messageFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    marginTop: 6,
-    gap: 6,
+    marginTop: 4,
+    gap: 5,
   },
   messageTime: {
-    fontSize: 11,
-    fontWeight: '500',
+    fontSize: 13,
+    color: '#FFFFFF80',
   },
 
-  // Reply Preview
+  // Reply Preview - Telegram December 2025
   replyPreview: {
     flexDirection: 'row',
-    padding: 6,
-    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     marginBottom: 6,
+    marginTop: -4,
+    borderLeftWidth: 3,
+    borderLeftColor: '#007AFF',
+    marginLeft: -12,
+    paddingLeft: 9,
   },
   replyLine: {
     width: 3,
     borderRadius: 2,
+    backgroundColor: '#007AFF',
     marginRight: 8,
   },
   replyContent: {
     flex: 1,
   },
   replyName: {
-    fontSize: 12,
+    fontSize: 13.5,
     fontWeight: '600',
+    color: '#007AFF',
   },
   replyText: {
-    fontSize: 12,
+    fontSize: 14,
+    color: '#FFFFFF90',
   },
 
-  // Reactions
+  // Reactions - Telegram December 2025
   reactionsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 4,
+    marginTop: 6,
     gap: 4,
   },
   reactionBubble: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     gap: 4,
   },
   reactionEmoji: {
-    fontSize: 14,
+    fontSize: 16,
   },
   reactionCount: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
+    color: '#FFFFFF',
   },
 
   // Media
@@ -1579,26 +2223,67 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginVertical: 4,
   },
-  mediaImage: {
+
+  videoNoteContainer: {
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  videoNoteCircle: {
     width: 200,
-    height: 150,
-    borderRadius: 12,
+    height: 200,
+    borderRadius: 100,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  videoNote: {
+    width: '100%',
+    height: '100%',
+  },
+  videoPlayOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  videoNoteDuration: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  videoNoteDurationText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  mediaImage: {
+    width: 260,
+    height: 180,
+    maxWidth: 280,
+    maxHeight: 400,
+    borderRadius: 14,
   },
   voiceMessage: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    minWidth: 160,
+    gap: 12,
+    minWidth: 220,
+    paddingVertical: 4,
   },
-  playButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  voicePlayButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  waveform: {
+  voiceWaveformContainer: {
     flex: 1,
+  },
+  waveform: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
@@ -1606,12 +2291,12 @@ const styles = StyleSheet.create({
   },
   waveformBar: {
     width: 3,
-    borderRadius: 2,
+    borderRadius: 1.5,
   },
   voiceDuration: {
     fontSize: 12,
-    minWidth: 32,
-    textAlign: 'right',
+    fontWeight: '500',
+    marginTop: 4,
   },
   fileMessage: {
     flexDirection: 'row',
@@ -1729,58 +2414,129 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  // Input - Красивый и современный
+  // Input - Telegram December 2025 (точно как на скрине)
   inputContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 12,
+    alignItems: 'center',
+    paddingHorizontal: 8,
     paddingTop: 10,
-    gap: 10,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(139, 92, 246, 0.15)',
-    backgroundColor: '#08080C',
+    paddingBottom: 10,
+    gap: 8,
+    backgroundColor: 'transparent',
   },
-  inputButton: {
-    padding: 10,
+  
+  // Скрепка в круглом контейнере
+  attachButton: {
+    width: 44,
+    height: 44,
     borderRadius: 22,
+    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  
+  // Стеклянная кнопка скрепки
+  attachButtonGlass: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(40, 40, 40, 0.5)',
+  },
+  
+  // Поле ввода
   inputWrapper: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    minHeight: 48,
-    maxHeight: 140,
-    backgroundColor: 'rgba(139, 92, 246, 0.08)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    alignItems: 'center',
+    borderRadius: 22,
+    paddingLeft: 16,
+    paddingRight: 6,
+    minHeight: 44,
+    maxHeight: 120,
+    backgroundColor: 'rgba(60, 60, 60, 0.8)',
+  },
+  
+  // Стеклянное поле ввода
+  inputWrapperGlass: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 22,
+    paddingLeft: 16,
+    paddingRight: 6,
+    minHeight: 44,
+    maxHeight: 120,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(40, 40, 40, 0.5)',
   },
   textInput: {
     flex: 1,
-    fontSize: 16,
-    maxHeight: 120,
-    paddingTop: 0,
-    paddingBottom: 0,
+    fontSize: 17,
+    maxHeight: 100,
+    paddingTop: 10,
+    paddingBottom: 10,
     color: '#FFFFFF',
-    fontWeight: '500',
+    fontWeight: '400',
+  },
+  
+  // Кнопка стикера внутри поля
+  stickerButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  // Кнопка отправки
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#007AFF',
+  },
+  
+  // Кнопка камеры в квадратной рамке
+  cameraButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: 'rgba(142, 142, 147, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  // Стеклянная кнопка камеры с рамкой
+  cameraButtonGlass: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(142, 142, 147, 0.5)',
+    backgroundColor: 'rgba(40, 40, 40, 0.4)',
+  },
+  
+  // Старые стили (для обратной совместимости)
+  inputButton: {
+    padding: 8,
+    borderRadius: 18,
   },
   inputEmojiButton: {
     padding: 6,
     marginLeft: 6,
   },
-  sendButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#8B5CF6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 6,
+  sendButtonDisabled: {
+    backgroundColor: '#3A3A3C',
   },
   
   // Attach Menu
@@ -1877,5 +2633,109 @@ const styles = StyleSheet.create({
   menuText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  
+  // New Messages Badge
+  newMessagesBadge: {
+    position: 'absolute',
+    bottom: 80,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#8B5CF6',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 6,
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  newMessagesBadgeText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Scroll Down Button - Telegram style
+  scrollDownButton: {
+    position: 'absolute',
+    bottom: 80,
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(30, 30, 30, 0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+
+  // Telegram Bottom Sheet
+  bottomSheetOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 100,
+  },
+  bottomSheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  bottomSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#1C1C1E',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingTop: 8,
+    zIndex: 101,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 16,
+  },
+  bottomSheetHandle: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  bottomSheetHandleBar: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  bottomSheetGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 16,
+  },
+  bottomSheetItem: {
+    width: (SCREEN_WIDTH - 40 - 32) / 3, // 3 в ряд
+    alignItems: 'center',
+    gap: 8,
+  },
+  bottomSheetIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bottomSheetText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#FFFFFF',
   },
 });

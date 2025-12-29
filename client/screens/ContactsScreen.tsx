@@ -11,14 +11,22 @@ import { useTheme } from "@/hooks/useTheme";
 export default function ContactsScreen() {
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const [searchText, setSearchText] = useState("");
 
-  const contacts = [
+  type Contact = {
+    id: number;
+    name: string;
+    role: "student" | "teacher";
+    avatar: string;
+    isOnline: boolean;
+  };
+
+  const contacts: Contact[] = [
     { id: 1, name: "Анна Петрова", role: "student", avatar: "А", isOnline: true },
     { id: 2, name: "Максим Сидоров", role: "student", avatar: "М", isOnline: false },
     { id: 3, name: "Елена Козлова", role: "student", avatar: "Е", isOnline: true },
-    { id:  4, name: "Мария Ивановна", role: "teacher", avatar: "М", isOnline: true },
+    { id: 4, name: "Мария Ивановна", role: "teacher", avatar: "М", isOnline: true },
     { id: 5, name: "Динара", role: "teacher", avatar: "Д", isOnline: false },
   ];
 
@@ -26,7 +34,7 @@ export default function ContactsScreen() {
     contact.name.toLowerCase().includes(searchText.toLowerCase())
   );
 
-  const renderContact = ({ item }) => (
+  const renderContact = ({ item }: { item: Contact }) => (
     <Pressable 
       style={[styles.contactItem, { backgroundColor: theme.backgroundDefault }]}
       onPress={() => {

@@ -5,12 +5,13 @@ import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View, Text } from "react-native";
 import HomeStackNavigator from "@/navigation/HomeStackNavigator";
-import ScheduleStackNavigator from "@/navigation/ScheduleStackNavigator";
+import QuickActionsStackNavigator from "@/navigation/QuickActionsStackNavigator";
 import CafeteriaStackNavigator from "@/navigation/CafeteriaStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import ChatsStackNavigator from "@/navigation/ChatsStackNavigator";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
+import { getApiUrl } from "@/lib/query-client";
 import { Colors, BorderRadius, Spacing } from "@/constants/theme";
 
 // Экраны где нужно скрывать табы
@@ -35,7 +36,7 @@ const getTabBarVisibility = (route: any) => {
 
 export type MainTabParamList = {
   HomeTab: undefined;
-  ScheduleTab: undefined;
+  ActionsTab: undefined;
   ChatsTab: undefined; // ✅ ДОБАВЛЯЕМ ЭТО
   CafeteriaTab: undefined;
   ProfileTab:  undefined;
@@ -88,7 +89,7 @@ export default function MainTabNavigator() {
       if (!user?.id) return;
       
       try {
-        const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.110:5000';
+        const API_URL = getApiUrl();
         const response = await fetch(`${API_URL}/api/user/${user.id}/chats`);
         if (response.ok) {
           const chats = await response.json();
@@ -116,8 +117,8 @@ export default function MainTabNavigator() {
             case 'HomeTab':
               iconName = 'home';
               break;
-            case 'ScheduleTab':
-              iconName = 'calendar';
+            case 'ActionsTab':
+              iconName = 'zap';
               break;
             case 'ChatsTab':  // ✅ ДОБАВЛЯЕМ ЭТО
               iconName = 'message-circle';
@@ -162,10 +163,10 @@ export default function MainTabNavigator() {
         }}
       />
       <Tab.Screen
-        name="ScheduleTab"
-        component={ScheduleStackNavigator}
+        name="ActionsTab"
+        component={QuickActionsStackNavigator}
         options={{
-          title: 'Расписание',
+          title: 'Действия',
         }}
       />
       {/* ✅ ДОБАВЛЯЕМ ЧАТЫ */}

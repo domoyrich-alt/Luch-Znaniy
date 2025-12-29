@@ -40,33 +40,8 @@ const VoiceMessagePlayer = memo(function VoiceMessagePlayer({
   const [currentTime, setCurrentTime] = useState(0);
   
   const animatedProgress = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   
   const wave = waveform || generateWaveform();
-  
-  // Анимация пульса при воспроизведении
-  useEffect(() => {
-    if (isPlaying) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.2,
-            duration: 500,
-            easing: Easing.ease,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 500,
-            easing: Easing.ease,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [isPlaying]);
   
   // Симуляция воспроизведения
   useEffect(() => {
@@ -108,19 +83,14 @@ const VoiceMessagePlayer = memo(function VoiceMessagePlayer({
     <View style={[styles.container, isOwn ? styles.ownContainer : styles.otherContainer]}>
       {/* Play/Pause Button */}
       <Pressable onPress={handlePress} style={styles.playButton}>
-        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-          <LinearGradient
-            colors={isOwn ? [NEON.primary, NEON.accent] : [NEON.secondary, NEON.primary]}
-            style={styles.playButtonGradient}
-          >
-            <Feather 
-              name={isPlaying ? "pause" : "play"} 
-              size={20} 
-              color="#FFF" 
-              style={isPlaying ? {} : { marginLeft: 2 }}
-            />
-          </LinearGradient>
-        </Animated.View>
+        <View style={[styles.playButtonInner, { backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : NEON.secondary }]}>
+          <Feather 
+            name={isPlaying ? "pause" : "play"} 
+            size={18} 
+            color="#FFF" 
+            style={isPlaying ? {} : { marginLeft: 2 }}
+          />
+        </View>
       </Pressable>
       
       {/* Waveform */}
@@ -134,8 +104,8 @@ const VoiceMessagePlayer = memo(function VoiceMessagePlayer({
                 {
                   height: `${height * 100}%`,
                   backgroundColor: index < playedBars 
-                    ? (isOwn ? NEON.accent : NEON.secondary)
-                    : (isOwn ? 'rgba(255,255,255,0.3)' : 'rgba(139,92,246,0.3)'),
+                    ? (isOwn ? '#fff' : NEON.secondary)
+                    : (isOwn ? 'rgba(255,255,255,0.4)' : 'rgba(78,205,196,0.4)'),
                 },
               ]}
             />
@@ -144,7 +114,7 @@ const VoiceMessagePlayer = memo(function VoiceMessagePlayer({
         
         {/* Time */}
         <View style={styles.timeContainer}>
-          <ThemedText style={styles.timeText}>
+          <ThemedText style={[styles.timeText, { color: isOwn ? 'rgba(255,255,255,0.8)' : NEON.textSecondary }]}>
             {formatTime(isPlaying ? currentTime : duration)}
           </ThemedText>
         </View>
@@ -157,27 +127,25 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 18,
     minWidth: 200,
     maxWidth: 280,
   },
   ownContainer: {
-    backgroundColor: NEON.primary,
+    backgroundColor: 'transparent',
   },
   otherContainer: {
-    backgroundColor: NEON.bgCard,
-    borderWidth: 1,
-    borderColor: NEON.primary + '30',
+    backgroundColor: 'transparent',
   },
   playButton: {
-    marginRight: 12,
+    marginRight: 10,
   },
-  playButtonGradient: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  playButtonInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -187,20 +155,20 @@ const styles = StyleSheet.create({
   waveform: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 32,
+    height: 28,
     gap: 2,
   },
   waveBar: {
     flex: 1,
-    borderRadius: 2,
-    minWidth: 3,
+    borderRadius: 1.5,
+    minWidth: 2.5,
   },
   timeContainer: {
     marginTop: 4,
   },
   timeText: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
   },
 });
 

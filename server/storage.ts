@@ -6,6 +6,7 @@ import {
   attendance, chatMessages, achievements, psychologistMessages, teacherSubjects, onlineLessons,
   userProfiles, privateChats, privateMessages, friendships, giftTypes, sentGifts,
   achievementTypes, achievementProgress, parentChildren,
+  userProfilePhotos, userSessions, userStars, starTransactions,
   type User, type InsertUser,
   type Class, type InsertClass,
   type InviteCode, type InsertInviteCode,
@@ -24,6 +25,7 @@ import {
   type TeacherSubject, type InsertTeacherSubject,
   type OnlineLesson, type InsertOnlineLesson,
   type UserProfile, type InsertUserProfile,
+  type UserProfilePhoto, type InsertUserProfilePhoto,
   type PrivateChat, type InsertPrivateChat,
   type PrivateMessage, type InsertPrivateMessage,
   type Friendship, type InsertFriendship,
@@ -32,7 +34,15 @@ import {
   type AchievementType, type InsertAchievementType,
   type AchievementProgress, type InsertAchievementProgress,
   type ParentChild, type InsertParentChild,
+  type UserSession, type InsertUserSession,
+  type UserStars, type InsertUserStars,
+  type StarTransaction, type InsertStarTransaction,
 } from "@shared/schema";
+
+export type ScheduleItemWithNames = ScheduleItem & {
+  subjectName?: string | null;
+  teacherName?: string | null;
+};
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -68,10 +78,15 @@ export interface IStorage {
   createHomeworkSubmission(submission: InsertHomeworkSubmission): Promise<HomeworkSubmission>;
   updateHomeworkSubmission(id: number, data: Partial<InsertHomeworkSubmission>): Promise<HomeworkSubmission | undefined>;
   
-  getScheduleByClass(classId: number, isEvenWeek?: boolean): Promise<ScheduleItem[]>;
+  getScheduleByClass(classId: number, isEvenWeek?: boolean): Promise<ScheduleItemWithNames[]>;
   createScheduleItem(item: InsertScheduleItem): Promise<ScheduleItem>;
   updateScheduleItem(id: number, data: Partial<InsertScheduleItem>): Promise<ScheduleItem | undefined>;
   deleteScheduleItem(id: number): Promise<void>;
+
+  getUserProfilePhotos(userId: number): Promise<UserProfilePhoto[]>;
+  getUserProfilePhoto(photoId: number): Promise<UserProfilePhoto | undefined>;
+  addUserProfilePhoto(userId: number, photoUrl: string): Promise<UserProfilePhoto>;
+  deleteUserProfilePhoto(userId: number, photoId: number): Promise<void>;
   
   getEvents(classId?: number): Promise<Event[]>;
   getEvent(id: number): Promise<Event | undefined>;
@@ -135,13 +150,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(user: InsertUser): Promise<User> {
-    const [newUser] = await db.insert(users).values(user).returning();
-    return newUser;
+    const inserted = (await db.insert(users).values(user).returning()) as User[];
+    return inserted[0];
   }
 
   async updateUser(id: number, data: Partial<InsertUser>): Promise<User | undefined> {
-    const [updated] = await db.update(users).set(data).where(eq(users.id, id)).returning();
-    return updated;
+    const updatedRows = (await db
+      .update(users)
+      .set(data)
+      .where(eq(users.id, id))
+      .returning()) as User[];
+    return updatedRows[0];
   }
 
   async getClass(id: number): Promise<Class | undefined> {
@@ -285,13 +304,38 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getScheduleByClass(classId: number, isEvenWeek?: boolean): Promise<ScheduleItem[]> {
+  async getScheduleByClass(classId: number, isEvenWeek?: boolean): Promise<ScheduleItemWithNames[]> {
+    const baseSelect = db
+      .select({
+        id: scheduleItems.id,
+        classId: scheduleItems.classId,
+        subjectId: scheduleItems.subjectId,
+        teacherId: scheduleItems.teacherId,
+        dayOfWeek: scheduleItems.dayOfWeek,
+        startTime: scheduleItems.startTime,
+        endTime: scheduleItems.endTime,
+        room: scheduleItems.room,
+        isEvenWeek: scheduleItems.isEvenWeek,
+        createdAt: scheduleItems.createdAt,
+        subjectName: subjects.name,
+        teacherName: sql<string>`TRIM(CONCAT(${users.firstName}, ' ', ${users.lastName}))`,
+      })
+      .from(scheduleItems)
+      .leftJoin(subjects, eq(scheduleItems.subjectId, subjects.id))
+      .leftJoin(users, eq(scheduleItems.teacherId, users.id));
+
     if (isEvenWeek !== undefined) {
-      return db.select().from(scheduleItems)
-        .where(and(eq(scheduleItems.classId, classId), eq(scheduleItems.isEvenWeek, isEvenWeek)))
+      return baseSelect
+        .where(
+          and(
+            eq(scheduleItems.classId, classId),
+            or(eq(scheduleItems.isEvenWeek, isEvenWeek), sql`${scheduleItems.isEvenWeek} IS NULL`)
+          )
+        )
         .orderBy(scheduleItems.dayOfWeek, scheduleItems.startTime);
     }
-    return db.select().from(scheduleItems)
+
+    return baseSelect
       .where(eq(scheduleItems.classId, classId))
       .orderBy(scheduleItems.dayOfWeek, scheduleItems.startTime);
   }
@@ -535,6 +579,33 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async getUserProfilePhotos(userId: number): Promise<UserProfilePhoto[]> {
+    return db
+      .select()
+      .from(userProfilePhotos)
+      .where(eq(userProfilePhotos.userId, userId))
+      .orderBy(desc(userProfilePhotos.createdAt));
+  }
+
+  async getUserProfilePhoto(photoId: number): Promise<UserProfilePhoto | undefined> {
+    const [row] = await db.select().from(userProfilePhotos).where(eq(userProfilePhotos.id, photoId)).limit(1);
+    return row;
+  }
+
+  async addUserProfilePhoto(userId: number, photoUrl: string): Promise<UserProfilePhoto> {
+    const [created] = await db
+      .insert(userProfilePhotos)
+      .values({ userId, photoUrl } as InsertUserProfilePhoto)
+      .returning();
+    return created;
+  }
+
+  async deleteUserProfilePhoto(userId: number, photoId: number): Promise<void> {
+    await db
+      .delete(userProfilePhotos)
+      .where(and(eq(userProfilePhotos.userId, userId), eq(userProfilePhotos.id, photoId)));
+  }
+
   async isUsernameAvailable(username: string): Promise<boolean> {
     const existing = await db.select().from(userProfiles).where(sql`LOWER(${userProfiles.username}) = LOWER(${username})`).limit(1);
     return existing.length === 0;
@@ -632,9 +703,18 @@ export class DatabaseStorage implements IStorage {
       .offset(offset);
   }
 
+  async getLastPrivateChatMessage(chatId: number): Promise<PrivateMessage | null> {
+    const messages = await db.select().from(privateMessages)
+      .where(eq(privateMessages.chatId, chatId))
+      .orderBy(sql`${privateMessages.createdAt} DESC`)
+      .limit(1);
+    return messages[0] || null;
+  }
+
   async sendPrivateMessage(chatId: number, senderId: number, message: InsertPrivateMessage): Promise<PrivateMessage> {
+    const { chatId: _chatId, senderId: _senderId, ...rest } = message as any;
     const [newMessage] = await db.insert(privateMessages)
-      .values({ chatId, senderId, ...message } as PrivateMessage)
+      .values({ ...rest, chatId, senderId } as PrivateMessage)
       .returning();
     
     // Обновляем lastMessageAt в чате
@@ -1205,6 +1285,143 @@ export class DatabaseStorage implements IStorage {
       .where(eq(homeworkSubmissions.id, submissionId))
       .returning();
     return updated;
+  }
+
+  // ==================== JWT СЕССИИ ====================
+
+  async createUserSession(data: InsertUserSession): Promise<UserSession> {
+    const [session] = await db.insert(userSessions).values(data).returning();
+    return session;
+  }
+
+  async getUserSessionByRefreshToken(refreshToken: string): Promise<UserSession | undefined> {
+    const [session] = await db.select().from(userSessions)
+      .where(eq(userSessions.refreshToken, refreshToken));
+    return session;
+  }
+
+  async updateUserSession(id: number, data: Partial<InsertUserSession & { lastUsedAt?: Date }>): Promise<UserSession | undefined> {
+    const [updated] = await db.update(userSessions)
+      .set(data)
+      .where(eq(userSessions.id, id))
+      .returning();
+    return updated;
+  }
+
+  async revokeAllUserSessions(userId: number): Promise<void> {
+    await db.update(userSessions)
+      .set({ isActive: false })
+      .where(eq(userSessions.userId, userId));
+  }
+
+  async getUserActiveSessions(userId: number): Promise<UserSession[]> {
+    return db.select().from(userSessions)
+      .where(and(eq(userSessions.userId, userId), eq(userSessions.isActive, true)))
+      .orderBy(desc(userSessions.lastUsedAt));
+  }
+
+  // ==================== БАЛАНС ЗВЁЗД (СЕРВЕРНЫЙ) ====================
+
+  async getUserStars(userId: number): Promise<UserStars | undefined> {
+    const [stars] = await db.select().from(userStars)
+      .where(eq(userStars.userId, userId));
+    return stars;
+  }
+
+  async getOrCreateUserStars(userId: number): Promise<UserStars> {
+    let stars = await this.getUserStars(userId);
+    if (!stars) {
+      const [created] = await db.insert(userStars)
+        .values({ userId, balance: 0, totalEarned: 0, totalSpent: 0 })
+        .returning();
+      stars = created;
+    }
+    return stars;
+  }
+
+  async addStars(userId: number, amount: number, type: string, reason?: string, relatedId?: number): Promise<{ newBalance: number; transaction: StarTransaction }> {
+    if (amount <= 0) throw new Error('Amount must be positive');
+    
+    const stars = await this.getOrCreateUserStars(userId);
+    const newBalance = stars.balance + amount;
+    
+    await db.update(userStars)
+      .set({ 
+        balance: newBalance, 
+        totalEarned: stars.totalEarned + amount,
+        updatedAt: new Date(),
+      })
+      .where(eq(userStars.userId, userId));
+    
+    const [transaction] = await db.insert(starTransactions)
+      .values({
+        userId,
+        amount,
+        type,
+        reason,
+        relatedId,
+        balanceAfter: newBalance,
+      })
+      .returning();
+    
+    return { newBalance, transaction };
+  }
+
+  async spendStars(userId: number, amount: number, type: string, reason?: string, relatedId?: number): Promise<{ success: boolean; newBalance: number; transaction?: StarTransaction; error?: string }> {
+    if (amount <= 0) return { success: false, newBalance: 0, error: 'Amount must be positive' };
+    
+    const stars = await this.getOrCreateUserStars(userId);
+    
+    // Проверяем роль пользователя для CEO (бесплатно)
+    const user = await this.getUser(userId);
+    if (user?.role === 'ceo') {
+      // CEO может тратить бесплатно - не списываем
+      const [transaction] = await db.insert(starTransactions)
+        .values({
+          userId,
+          amount: 0, // CEO не тратит реальные звёзды
+          type: type + '_ceo_free',
+          reason,
+          relatedId,
+          balanceAfter: stars.balance,
+        })
+        .returning();
+      return { success: true, newBalance: stars.balance, transaction };
+    }
+    
+    if (stars.balance < amount) {
+      return { success: false, newBalance: stars.balance, error: 'Недостаточно звёзд' };
+    }
+    
+    const newBalance = stars.balance - amount;
+    
+    await db.update(userStars)
+      .set({ 
+        balance: newBalance, 
+        totalSpent: stars.totalSpent + amount,
+        updatedAt: new Date(),
+      })
+      .where(eq(userStars.userId, userId));
+    
+    const [transaction] = await db.insert(starTransactions)
+      .values({
+        userId,
+        amount: -amount,
+        type,
+        reason,
+        relatedId,
+        balanceAfter: newBalance,
+      })
+      .returning();
+    
+    return { success: true, newBalance, transaction };
+  }
+
+  async getStarTransactions(userId: number, limit = 50): Promise<StarTransaction[]> {
+    return db.select().from(starTransactions)
+      .where(eq(starTransactions.userId, userId))
+      .orderBy(desc(starTransactions.createdAt))
+      .limit(limit);
   }
 }
 

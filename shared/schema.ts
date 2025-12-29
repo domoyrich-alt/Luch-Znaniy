@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, integer, date, serial, decimal } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, integer, date, serial, decimal, foreignKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -11,17 +11,26 @@ export const classes = pgTable("classes", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const users = pgTable("users", {
+export const users = pgTable(
+  "users",
+  {
   id: serial("id").primaryKey(),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   role: text("role").notNull().default("student"),
   classId: integer("class_id").references(() => classes.id),
   inviteCode: text("invite_code").notNull(),
-  parentOfId: integer("parent_of_id").references(() => users.id),
+  parentOfId: integer("parent_of_id"),
   createdById: integer("created_by_id"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+  },
+  (table) => ({
+    parentOfFk: foreignKey({
+      columns: [table.parentOfId],
+      foreignColumns: [table.id],
+    }),
+  }),
+);
 
 export const inviteCodes = pgTable("invite_codes", {
   id: serial("id").primaryKey(),
@@ -237,6 +246,13 @@ export const userProfiles = pgTable("user_profiles", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const userProfilePhotos = pgTable("user_profile_photos", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  photoUrl: text("photo_url").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const privateChats = pgTable("private_chats", {
   id: serial("id").primaryKey(),
   user1Id: integer("user1_id").notNull().references(() => users.id),
@@ -281,6 +297,44 @@ export const giftTypes = pgTable("gift_types", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// ==================== БЕЗОПАСНОСТЬ И АУТЕНТИФИКАЦИЯ ====================
+
+// СЕССИИ (JWT refresh tokens)
+export const userSessions = pgTable("user_sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  refreshToken: text("refresh_token").notNull().unique(),
+  deviceInfo: text("device_info"), // User-Agent, device name
+  ipAddress: text("ip_address"),
+  isActive: boolean("is_active").default(true),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastUsedAt: timestamp("last_used_at").defaultNow(),
+});
+
+// БАЛАНС ЗВЁЗД (серверный, защищённый)
+export const userStars = pgTable("user_stars", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id),
+  balance: integer("balance").notNull().default(0),
+  totalEarned: integer("total_earned").notNull().default(0),
+  totalSpent: integer("total_spent").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ТРАНЗАКЦИИ ЗВЁЗД (аудит)
+export const starTransactions = pgTable("star_transactions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  amount: integer("amount").notNull(), // положительное = заработал, отрицательное = потратил
+  type: text("type").notNull(), // 'earn', 'spend', 'gift_send', 'gift_receive', 'admin_add'
+  reason: text("reason"), // 'message', 'photo', 'gift_to_user_123', etc.
+  relatedId: integer("related_id"), // ID подарка, сообщения и т.д.
+  balanceAfter: integer("balance_after").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // ОТПРАВЛЕННЫЕ ПОДАРКИ
 export const sentGifts = pgTable("sent_gifts", {
   id: serial("id").primaryKey(),
@@ -296,6 +350,7 @@ export const sentGifts = pgTable("sent_gifts", {
 
 export const insertAchievementSchema = createInsertSchema(achievements).omit({ id: true, earnedAt: true });
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true, createdAt: true, lastSeenAt: true });
+export const insertUserProfilePhotoSchema = createInsertSchema(userProfilePhotos).omit({ id: true, createdAt: true });
 export const insertPrivateChatSchema = createInsertSchema(privateChats).omit({ id: true, createdAt: true, lastMessageAt: true });
 export const insertPrivateMessageSchema = createInsertSchema(privateMessages).omit({ id: true, createdAt: true, readAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
@@ -317,6 +372,9 @@ export const insertOnlineLessonSchema = createInsertSchema(onlineLessons).omit({
 export const insertFriendshipSchema = createInsertSchema(friendships).omit({ id: true, createdAt: true, acceptedAt: true });
 export const insertGiftTypeSchema = createInsertSchema(giftTypes).omit({ id: true, createdAt: true });
 export const insertSentGiftSchema = createInsertSchema(sentGifts).omit({ id: true, createdAt: true, openedAt: true });
+export const insertUserSessionSchema = createInsertSchema(userSessions).omit({ id: true, createdAt: true, lastUsedAt: true });
+export const insertUserStarsSchema = createInsertSchema(userStars).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertStarTransactionSchema = createInsertSchema(starTransactions).omit({ id: true, createdAt: true });
 export const insertAchievementTypeSchema = createInsertSchema(achievementTypes).omit({ id: true, createdAt: true });
 export const insertAchievementProgressSchema = createInsertSchema(achievementProgress).omit({ id: true, createdAt: true, completedAt: true });
 export const insertParentChildSchema = createInsertSchema(parentChildren).omit({ id: true, createdAt: true, approvedAt: true });
@@ -357,6 +415,9 @@ export type OnlineLesson = typeof onlineLessons.$inferSelect;
 export type InsertOnlineLesson = z.infer<typeof insertOnlineLessonSchema>;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
+
+export type UserProfilePhoto = typeof userProfilePhotos.$inferSelect;
+export type InsertUserProfilePhoto = z.infer<typeof insertUserProfilePhotoSchema>;
 export type PrivateChat = typeof privateChats.$inferSelect;
 export type InsertPrivateChat = z.infer<typeof insertPrivateChatSchema>;
 export type PrivateMessage = typeof privateMessages.$inferSelect;
@@ -373,3 +434,10 @@ export type AchievementProgress = typeof achievementProgress.$inferSelect;
 export type InsertAchievementProgress = z.infer<typeof insertAchievementProgressSchema>;
 export type ParentChild = typeof parentChildren.$inferSelect;
 export type InsertParentChild = z.infer<typeof insertParentChildSchema>;
+
+export type UserSession = typeof userSessions.$inferSelect;
+export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
+export type UserStars = typeof userStars.$inferSelect;
+export type InsertUserStars = z.infer<typeof insertUserStarsSchema>;
+export type StarTransaction = typeof starTransactions.$inferSelect;
+export type InsertStarTransaction = z.infer<typeof insertStarTransactionSchema>;

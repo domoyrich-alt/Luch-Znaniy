@@ -82,9 +82,9 @@ export function MediaPicker({ visible, onClose, onSelect }: MediaPickerProps) {
   };
 
   const options = [
-    { icon: 'image', label: 'Фото из галереи', color: '#4ECDC4', onPress: pickImage },
-    { icon: 'camera', label: 'Камера', color: '#FF6B6B', onPress: takePhoto },
-    { icon: 'file', label: 'Документ', color: '#8B5CF6', onPress: pickFile },
+    { icon: 'image', label: 'Галерея', color: '#3390EC', onPress: pickImage },
+    { icon: 'camera', label: 'Камера', color: '#58D68D', onPress: takePhoto },
+    { icon: 'file-text', label: 'Файл', color: '#AF7AC5', onPress: pickFile },
   ];
 
   return (
@@ -101,9 +101,9 @@ export function MediaPicker({ visible, onClose, onSelect }: MediaPickerProps) {
                 onPress={option.onPress}
               >
                 <View style={[styles.optionIcon, { backgroundColor: option.color }]}>
-                  <Feather name={option.icon as any} size={24} color="#fff" />
+                  <Feather name={option.icon as any} size={26} color="#fff" />
                 </View>
-                <ThemedText style={styles.optionLabel}>{option.label}</ThemedText>
+                <ThemedText style={[styles.optionLabel, { color: theme.text }]}>{option.label}</ThemedText>
               </Pressable>
             ))}
           </View>
@@ -112,7 +112,7 @@ export function MediaPicker({ visible, onClose, onSelect }: MediaPickerProps) {
             style={[styles.cancelButton, { backgroundColor: theme.backgroundSecondary }]}
             onPress={onClose}
           >
-            <ThemedText style={styles.cancelText}>Отмена</ThemedText>
+            <ThemedText style={[styles.cancelText, { color: theme.text }]}>Отмена</ThemedText>
           </Pressable>
         </View>
       </Pressable>
@@ -133,9 +133,9 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   handle: {
-    width: 40,
+    width: 36,
     height: 4,
-    backgroundColor: '#DDD',
+    backgroundColor: 'rgba(150,150,150,0.4)',
     borderRadius: 2,
     alignSelf: 'center',
     marginBottom: Spacing.lg,
@@ -144,28 +144,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     marginBottom: Spacing.lg,
+    paddingHorizontal: 10,
   },
   option: {
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+    flex: 1,
   },
   optionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
   },
   optionLabel: {
     fontSize: 13,
+    fontWeight: '500',
   },
   cancelButton: {
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     alignItems: 'center',
+    marginTop: 8,
   },
   cancelText: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 });

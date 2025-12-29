@@ -314,15 +314,16 @@ export default function RegisterProfileScreen() {
           </View>
 
           {/* Submit Button */}
-          <Button
-            title={isLoading ? "Сохранение..." : "Завершить регистрацию"}
-            onPress={handleSubmit}
-            disabled={isLoading || !usernameAvailable || isCheckingUsername}
-            style={[
-              styles.submitButton,
-              { backgroundColor: usernameAvailable ? theme.primary : theme.textSecondary },
-            ]}
-          />
+            <Button
+              onPress={handleSubmit}
+              disabled={isLoading || !usernameAvailable || isCheckingUsername}
+              style={[
+                styles.submitButton,
+                { backgroundColor: usernameAvailable ? theme.primary : theme.textSecondary },
+              ]}
+            >
+              {isLoading ? "Сохранение..." : "Завершить регистрацию"}
+            </Button>
 
           {/* Skip Button */}
           <Pressable

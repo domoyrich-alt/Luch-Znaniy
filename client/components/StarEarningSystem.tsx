@@ -1,3 +1,5 @@
+import { Alert } from "react-native";
+
 export const STAR_REWARDS = {
   // За оценки
   grade_5: { stars: 5, message: "Отличная работа! ⭐" },

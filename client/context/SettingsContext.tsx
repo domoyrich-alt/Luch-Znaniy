@@ -1,8 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserSettings, DEFAULT_SETTINGS, BlockedUser } from '@/types/settings';
+import { useAuth } from '@/context/AuthContext';
 
-const SETTINGS_KEY = '@app_settings';
+const SETTINGS_KEY_PREFIX = '@app_settings:';
+const LEGACY_SETTINGS_KEY = '@app_settings';
+
+function getSettingsKey(userId: number | null | undefined): string {
+  return `${SETTINGS_KEY_PREFIX}${userId ?? 'guest'}`;
+}
 
 interface SettingsContextType {
   settings: UserSettings;
@@ -35,17 +41,32 @@ interface SettingsContextType {
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Загрузка настроек при старте
+  // Загружаем настройки при старте и при смене пользователя
   useEffect(() => {
-    loadSettings();
-  }, []);
+    loadSettingsForUser(user?.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
-  const loadSettings = async () => {
+  const loadSettingsForUser = async (userId?: number | null) => {
     try {
-      const savedSettings = await AsyncStorage.getItem(SETTINGS_KEY);
+      setIsLoading(true);
+      const key = getSettingsKey(userId);
+      let savedSettings = await AsyncStorage.getItem(key);
+
+      // Миграция: раньше настройки были общими для всех аккаунтов.
+      // Если для пользователя ещё нет своих настроек, переносим legacy в per-user ключ.
+      if ((!savedSettings || savedSettings.length === 0) && userId) {
+        const legacy = await AsyncStorage.getItem(LEGACY_SETTINGS_KEY);
+        if (legacy && legacy.length > 0) {
+          await AsyncStorage.setItem(key, legacy);
+          await AsyncStorage.removeItem(LEGACY_SETTINGS_KEY);
+          savedSettings = legacy;
+        }
+      }
 
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings);
@@ -59,9 +80,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           general: { ...DEFAULT_SETTINGS.general, ...parsed.general },
           blockedUsers: parsed.blockedUsers || [],
         });
+      } else {
+        // Нет сохранённых настроек для этого пользователя
+        setSettings(DEFAULT_SETTINGS);
       }
     } catch (error) {
       console.error('Ошибка загрузки настроек:', error);
+      setSettings(DEFAULT_SETTINGS);
     } finally {
       setIsLoading(false);
     }
@@ -69,7 +94,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const saveSettings = async (newSettings: UserSettings) => {
     try {
-      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+      await AsyncStorage.setItem(getSettingsKey(user?.id), JSON.stringify(newSettings));
       setSettings(newSettings);
     } catch (error) {
       console.error('Ошибка сохранения настроек:', error);
@@ -142,7 +167,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   };
 
   const resetSettings = async () => {
-    await AsyncStorage.removeItem(SETTINGS_KEY);
+    await AsyncStorage.removeItem(getSettingsKey(user?.id));
     setSettings(DEFAULT_SETTINGS);
   };
 

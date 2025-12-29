@@ -18,7 +18,7 @@ export default function HomeworkModal() {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { homework, addHomework } = useApp();
+  const { homework, addHomework, subjects } = useApp();
   const { user } = useAuth();
   
   // Получаем классы для выбора (если мы CEO или учитель)
@@ -40,11 +40,16 @@ export default function HomeworkModal() {
       return Alert.alert("Ошибка", "Заполните название и выберите класс");
     }
     try {
+      const selectedSubject =
+        subjects.find((s) => s.name === newHomework.subjectName) || subjects[0];
+      if (!selectedSubject) {
+        return Alert.alert("Ошибка", "Нет списка предметов. Попробуйте позже.");
+      }
+
       await addHomework({
+        subjectId: selectedSubject.id,
         title: newHomework.title,
         description: newHomework.description,
-        subjectName: newHomework.subjectName,
-        classId: newHomework.targetClassId,
         dueDate: newHomework.dueDate || new Date().toISOString().split("T")[0],
       });
       setAddModalVisible(false);
@@ -55,7 +60,20 @@ export default function HomeworkModal() {
     }
   };
 
-  const subjects = ["Математика", "Русский", "Литература", "Физика", "Химия", "Биология", "История", "География", "Английский"];
+  const subjectOptions =
+    subjects.length > 0
+      ? subjects.map((s) => s.name)
+      : [
+          "Математика",
+          "Русский",
+          "Литература",
+          "Физика",
+          "Химия",
+          "Биология",
+          "История",
+          "География",
+          "Английский",
+        ];
 
   return (
     <ThemedView style={styles.container}>
@@ -89,9 +107,9 @@ export default function HomeworkModal() {
               
               <ThemedText style={{marginBottom: 5}}>Предмет:</ThemedText>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15, maxHeight: 50 }}>
-                {subjects.map(s => (
+                 {subjectOptions.map((s) => (
                    <Pressable key={s} onPress={() => setNewHomework({...newHomework, subjectName: s})} style={{ padding: 10, backgroundColor: newHomework.subjectName === s ? theme.primary : "#eee", borderRadius: 8, marginRight: 8 }}>
-                      <ThemedText style={{ color: newHomework.subjectName === s ? "#fff" : "#000" }}>{s}</ThemedText>
+                     <ThemedText style={{ color: newHomework.subjectName === s ? "#fff" : "#000" }}>{s}</ThemedText>
                    </Pressable>
                 ))}
               </ScrollView>

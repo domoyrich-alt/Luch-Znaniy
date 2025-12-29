@@ -5,13 +5,13 @@
  */
 
 // Существующие компоненты
-export { default as MessageBubble } from './MessageBubble';
-export { default as ChatListItem } from './ChatListItem';
-export { default as MediaPicker } from './MediaPicker';
-export { default as MessageContextMenu } from './MessageContextMenu';
-export { default as ReactionPicker } from './ReactionPicker';
-export { default as ReplyPreview } from './ReplyPreview';
-export { default as VoiceRecorder } from './VoiceRecorder';
+export { MessageBubble } from './MessageBubble';
+export { ChatListItem } from './ChatListItem';
+export { MediaPicker } from './MediaPicker';
+export { MessageContextMenu } from './MessageContextMenu';
+export { ReactionPicker } from './ReactionPicker';
+export { ReplyPreview } from './ReplyPreview';
+export { VoiceRecorder } from './VoiceRecorder';
 
 // Новые оптимизированные компоненты
 export { default as OptimizedChatListItem } from './OptimizedChatListItem';

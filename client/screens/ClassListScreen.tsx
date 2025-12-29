@@ -8,6 +8,7 @@ import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useAuth } from "@/context/AuthContext";
+import { getApiUrl } from "@/lib/query-client";
 
 const NEON = {
   primary: "#8B5CF6",
@@ -101,7 +102,7 @@ export default function ClassListScreen() {
       try {
         setLoading(true);
         setError(null);
-        const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://192.168.100.110:5000";
+        const API_URL = getApiUrl();
         const response = await fetch(`${API_URL}/api/classmates/${user.classId}`);
         if (response.ok) {
           const data = await response.json();
@@ -147,7 +148,7 @@ export default function ClassListScreen() {
     setLoading(true);
     setError(null);
     try {
-      const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://192.168.100.110:5000";
+      const API_URL = getApiUrl();
       const response = await fetch(`${API_URL}/api/classmates/${user?.classId}`);
       if (response.ok) {
         const data = await response.json();
