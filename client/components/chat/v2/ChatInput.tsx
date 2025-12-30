@@ -33,6 +33,7 @@ import {
   TelegramSizes as sizes,
   TelegramTypography as typography,
 } from '@/constants/telegramDarkTheme';
+import { VideoCircleRecorder } from './VideoCircleRecorder';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -52,6 +53,11 @@ interface MediaPreview {
   name?: string;
 }
 
+interface VideoCircleData {
+  uri: string;
+  duration: number;
+}
+
 interface ChatInputProps {
   value: string;
   onChangeText: (text: string) => void;
@@ -60,8 +66,7 @@ interface ChatInputProps {
   onEmojiPress: () => void;
   onVoiceStart?: () => void;
   onVoiceEnd?: () => void;
-  onVideoStart?: () => void;
-  onVideoEnd?: () => void;
+  onVideoCircleRecorded?: (data: VideoCircleData) => void;
   replyTo?: ReplyInfo | null;
   onCancelReply?: () => void;
   mediaPreview?: MediaPreview | null;
@@ -187,8 +192,7 @@ export const ChatInput = memo(function ChatInput({
   onEmojiPress,
   onVoiceStart,
   onVoiceEnd,
-  onVideoStart,
-  onVideoEnd,
+  onVideoCircleRecorded,
   replyTo,
   onCancelReply,
   mediaPreview,
@@ -201,6 +205,7 @@ export const ChatInput = memo(function ChatInput({
   const [isRecording, setIsRecording] = useState(false);
   const [recordMode, setRecordMode] = useState<'voice' | 'video'>('voice');
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [showVideoRecorder, setShowVideoRecorder] = useState(false);
   
   const inputRef = useRef<TextInput>(null);
   const sendButtonAnim = useRef(new Animated.Value(0)).current;
@@ -267,14 +272,15 @@ export const ChatInput = memo(function ChatInput({
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
+    
+    if (recordMode === 'video') {
+      setShowVideoRecorder(true);
+      return;
+    }
+    
     setIsRecording(true);
     setRecordingDuration(0);
-    
-    if (recordMode === 'voice') {
-      onVoiceStart?.();
-    } else {
-      onVideoStart?.();
-    }
+    onVoiceStart?.();
     
     durationTimer.current = setInterval(() => {
       setRecordingDuration(prev => prev + 1);
@@ -309,7 +315,7 @@ export const ChatInput = memo(function ChatInput({
         }),
       ])
     ).start();
-  }, [canSend, recordMode, onVoiceStart, onVideoStart, recordingAnim, pulseAnim]);
+  }, [canSend, recordMode, onVoiceStart, recordingAnim, pulseAnim]);
 
   const handleRecordPressOut = useCallback(() => {
     if (!isRecording) return;
@@ -326,14 +332,14 @@ export const ChatInput = memo(function ChatInput({
     pulseAnim.stopAnimation();
     pulseAnim.setValue(1);
     
-    if (recordMode === 'voice') {
-      onVoiceEnd?.();
-    } else {
-      onVideoEnd?.();
-    }
-    
+    onVoiceEnd?.();
     setRecordingDuration(0);
-  }, [isRecording, recordMode, recordingAnim, pulseAnim, onVoiceEnd, onVideoEnd]);
+  }, [isRecording, recordingAnim, pulseAnim, onVoiceEnd]);
+
+  const handleVideoRecorded = useCallback((uri: string, duration: number) => {
+    setShowVideoRecorder(false);
+    onVideoCircleRecorded?.({ uri, duration });
+  }, [onVideoCircleRecorded]);
 
   const handleContentSizeChange = useCallback((e: any) => {
     const newHeight = Math.min(
@@ -481,6 +487,12 @@ export const ChatInput = memo(function ChatInput({
           )}
         </View>
       </View>
+
+      <VideoCircleRecorder
+        visible={showVideoRecorder}
+        onClose={() => setShowVideoRecorder(false)}
+        onVideoRecorded={handleVideoRecorded}
+      />
     </View>
   );
 });
