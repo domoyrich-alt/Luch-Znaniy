@@ -157,3 +157,23 @@ shared/           # Shared code (schema definitions)
 - `psychologistMessages`: Stores student-psychologist communications
 - `onlineLessons`: Stores video lesson information with meeting links
 - `chatMessages`: Extended with mediaType and mediaUrl for media attachments
+
+### Telegram-Style Chat Features (December 30, 2024)
+- **VideoCircleRecorder**: Full-screen modal for recording Telegram-style video circles
+- **VideoCircleMessage**: Circular video playback component for chat messages
+- **ChatInput Enhancements**:
+  - Tap mic button to toggle between voice/video mode
+  - Long-press to record voice (animated pulsing microphone)
+  - Video mode opens VideoCircleRecorder modal
+  - Recording duration timer with visual indicator
+- **ChatListWidget Improvements**:
+  - Telegram-style time formatting (today: HH:MM, yesterday: "Вчера", week: day name, older: DD.MM)
+  - Blocked users show only first letter avatar (no photo, no online indicator)
+  - Added isBlocked, lastMessageSenderId, isLastMessageRead fields
+- **Gift Management**:
+  - MyGiftsScreen with visible/hidden tabs
+  - Toggle gift visibility in profile
+  - API endpoints: POST `/api/gifts/:giftId/toggle-visibility`, GET `/api/users/:userId/gifts`
+
+### Notes
+- Twilio integration for real calls was offered but declined by user. Manual implementation would require Twilio credentials stored as secrets.
