@@ -55,4 +55,5 @@ ensurePreviewReachable = "/status"
 
 [userenv.shared]
 EXPO_PUBLIC_DOMAIN = "c5f21266-44a7-425f-8809-e7fcb4c8cd98-00-167e9zdn49pls.riker.replit.dev"
+EXPO_PUBLIC_API_URL = "https://c5f21266-44a7-425f-8809-e7fcb4c8cd98-00-167e9zdn49pls.riker.replit.dev"
 

@@ -5,6 +5,7 @@ import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import * as fs from "fs";
 import * as path from "path";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 const app = express();
 const log = console.log;
@@ -159,6 +160,36 @@ function configureExpoAndLanding(app: express.Application) {
   const appName = getAppName();
 
   log("Serving static Expo files with dynamic manifest routing");
+
+  // В dev режиме проксируем на Metro bundler (порт 8081)
+  if (process.env.NODE_ENV === "development") {
+    const metroProxy = createProxyMiddleware({
+      target: "http://localhost:8081",
+      changeOrigin: true,
+      ws: true,
+      logger: console,
+    });
+
+    // Проксируем Expo web и Metro bundler запросы
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      // API запросы обрабатываем локально
+      if (req.path.startsWith("/api")) {
+        return next();
+      }
+      
+      // Expo mobile manifest - обрабатываем локально
+      const platform = req.header("expo-platform");
+      if (platform && (platform === "ios" || platform === "android")) {
+        return serveExpoManifest(platform, res);
+      }
+
+      // Все остальное проксируем на Metro
+      return metroProxy(req, res, next);
+    });
+    
+    log("Development mode: Proxying web requests to Metro on port 8081");
+    return;
+  }
 
   app.use((req:  Request, res: Response, next:  NextFunction) => {
     if (req.path.startsWith("/api")) {
