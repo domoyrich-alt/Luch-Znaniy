@@ -60,6 +60,8 @@ interface ChatInputProps {
   onEmojiPress: () => void;
   onVoiceStart?: () => void;
   onVoiceEnd?: () => void;
+  onVideoStart?: () => void;
+  onVideoEnd?: () => void;
   replyTo?: ReplyInfo | null;
   onCancelReply?: () => void;
   mediaPreview?: MediaPreview | null;
@@ -185,6 +187,8 @@ export const ChatInput = memo(function ChatInput({
   onEmojiPress,
   onVoiceStart,
   onVoiceEnd,
+  onVideoStart,
+  onVideoEnd,
   replyTo,
   onCancelReply,
   mediaPreview,
@@ -195,11 +199,16 @@ export const ChatInput = memo(function ChatInput({
 }: ChatInputProps) {
   const [inputHeight, setInputHeight] = useState(44);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordMode, setRecordMode] = useState<'voice' | 'video'>('voice');
+  const [recordingDuration, setRecordingDuration] = useState(0);
   
   const inputRef = useRef<TextInput>(null);
   const sendButtonAnim = useRef(new Animated.Value(0)).current;
   const micButtonAnim = useRef(new Animated.Value(1)).current;
   const recordingAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const durationTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wasLongPress = useRef(false);
 
   const hasText = value.trim().length > 0;
   const hasMedia = !!mediaPreview;
@@ -231,14 +240,60 @@ export const ChatInput = memo(function ChatInput({
     onSend();
   }, [canSend, disabled, onSend]);
 
-  const handleVoicePressIn = useCallback(() => {
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleModeToggle = useCallback(() => {
+    if (canSend || isRecording) return;
+    if (wasLongPress.current) {
+      wasLongPress.current = false;
+      return;
+    }
+    
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setRecordMode(prev => prev === 'voice' ? 'video' : 'voice');
+  }, [canSend, isRecording]);
+
+  const handleRecordPressIn = useCallback(() => {
     if (canSend) return;
+    
+    wasLongPress.current = true;
     
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     setIsRecording(true);
-    onVoiceStart?.();
+    setRecordingDuration(0);
+    
+    if (recordMode === 'voice') {
+      onVoiceStart?.();
+    } else {
+      onVideoStart?.();
+    }
+    
+    durationTimer.current = setInterval(() => {
+      setRecordingDuration(prev => prev + 1);
+    }, 1000);
+    
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.3,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
     
     Animated.loop(
       Animated.sequence([
@@ -254,16 +309,31 @@ export const ChatInput = memo(function ChatInput({
         }),
       ])
     ).start();
-  }, [canSend, onVoiceStart, recordingAnim]);
+  }, [canSend, recordMode, onVoiceStart, onVideoStart, recordingAnim, pulseAnim]);
 
-  const handleVoicePressOut = useCallback(() => {
+  const handleRecordPressOut = useCallback(() => {
     if (!isRecording) return;
     
     setIsRecording(false);
+    
+    if (durationTimer.current) {
+      clearInterval(durationTimer.current);
+      durationTimer.current = null;
+    }
+    
     recordingAnim.stopAnimation();
     recordingAnim.setValue(0);
-    onVoiceEnd?.();
-  }, [isRecording, recordingAnim, onVoiceEnd]);
+    pulseAnim.stopAnimation();
+    pulseAnim.setValue(1);
+    
+    if (recordMode === 'voice') {
+      onVoiceEnd?.();
+    } else {
+      onVideoEnd?.();
+    }
+    
+    setRecordingDuration(0);
+  }, [isRecording, recordMode, recordingAnim, pulseAnim, onVoiceEnd, onVideoEnd]);
 
   const handleContentSizeChange = useCallback((e: any) => {
     const newHeight = Math.min(
@@ -365,18 +435,50 @@ export const ChatInput = memo(function ChatInput({
                 styles.micButtonInner,
                 isRecording && { backgroundColor: colors.error },
               ]}
-              onPressIn={handleVoicePressIn}
-              onPressOut={handleVoicePressOut}
+              onPress={handleModeToggle}
+              onLongPress={handleRecordPressIn}
+              onPressOut={handleRecordPressOut}
+              delayLongPress={200}
             >
-              <Animated.View style={{ opacity: isRecording ? recordingAnim : 1 }}>
-                <Ionicons 
-                  name="mic" 
-                  size={22} 
-                  color={isRecording ? '#fff' : colors.primary} 
-                />
+              <Animated.View 
+                style={{ 
+                  opacity: isRecording ? recordingAnim : 1,
+                  transform: [{ scale: isRecording ? pulseAnim : 1 }],
+                }}
+              >
+                {recordMode === 'voice' ? (
+                  <Ionicons 
+                    name="mic" 
+                    size={22} 
+                    color={isRecording ? '#fff' : colors.primary} 
+                  />
+                ) : (
+                  <View style={[
+                    styles.videoCircle,
+                    isRecording && { backgroundColor: '#fff' },
+                  ]}>
+                    <Ionicons 
+                      name="videocam" 
+                      size={14} 
+                      color={isRecording ? colors.error : colors.primary} 
+                    />
+                  </View>
+                )}
               </Animated.View>
             </Pressable>
           </Animated.View>
+
+          {isRecording && (
+            <View style={styles.recordingIndicator}>
+              <View style={styles.recordingDot} />
+              <ThemedText style={styles.recordingText}>
+                {formatDuration(recordingDuration)}
+              </ThemedText>
+              <ThemedText style={styles.recordingHint}>
+                {recordMode === 'voice' ? 'Голос' : 'Видео'}
+              </ThemedText>
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -534,6 +636,43 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  videoCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#5EB5F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  recordingIndicator: {
+    position: 'absolute',
+    left: -120,
+    bottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF4444',
+    marginRight: 8,
+  },
+  recordingText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  recordingHint: {
+    fontSize: 12,
+    color: '#8B9BA5',
   },
 });
 

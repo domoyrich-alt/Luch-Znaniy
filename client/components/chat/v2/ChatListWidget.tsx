@@ -50,7 +50,10 @@ export interface Chat {
   isOnline?: boolean;
   isPinned?: boolean;
   isMuted?: boolean;
+  isBlocked?: boolean;
   status?: string;
+  lastMessageSenderId?: number;
+  isLastMessageRead?: boolean;
 }
 
 interface SwipeableChatItemProps {
@@ -240,11 +243,24 @@ const SwipeableChatItem = memo(function SwipeableChatItem({
     })
   ).current;
 
-  // Форматирование времени
+  // Форматирование времени как в Telegram
   const formatTime = (time?: string | Date): string => {
     if (!time) return '';
     const date = typeof time === 'string' ? new Date(time) : time;
-    return date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+      return date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+    } else if (diffDays === 1) {
+      return 'Вчера';
+    } else if (diffDays < 7) {
+      const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+      return days[date.getDay()];
+    } else {
+      return date.toLocaleDateString('ru', { day: '2-digit', month: '2-digit' });
+    }
   };
 
   return (
@@ -306,7 +322,13 @@ const SwipeableChatItem = memo(function SwipeableChatItem({
         >
           {/* Аватар */}
           <View style={styles.avatarContainer}>
-            {chat.avatar ? (
+            {chat.isBlocked ? (
+              <View style={[styles.avatar, { backgroundColor: colors.textTertiary }]}>
+                <ThemedText style={styles.avatarText}>
+                  {chat.name.charAt(0).toUpperCase()}
+                </ThemedText>
+              </View>
+            ) : chat.avatar ? (
               <Image source={{ uri: chat.avatar }} style={styles.avatar} />
             ) : (
               <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
@@ -317,7 +339,7 @@ const SwipeableChatItem = memo(function SwipeableChatItem({
             )}
             
             {/* Онлайн индикатор */}
-            {chat.isOnline && (
+            {chat.isOnline && !chat.isBlocked && (
               <View style={styles.onlineIndicator} />
             )}
           </View>
