@@ -149,6 +149,17 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUserByStudentCode(code: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.studentCode, code));
+    return user;
+  }
+
+  async generateStudentCode(studentId: number): Promise<string> {
+    const code = `STU-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    await db.update(users).set({ studentCode: code }).where(eq(users.id, studentId));
+    return code;
+  }
+
   async createUser(user: InsertUser): Promise<User> {
     const inserted = (await db.insert(users).values(user).returning()) as User[];
     return inserted[0];
@@ -244,8 +255,27 @@ export class DatabaseStorage implements IStorage {
     return newSubject;
   }
 
-  async getGradesByStudent(studentId: number): Promise<Grade[]> {
-    return db.select().from(grades).where(eq(grades.studentId, studentId)).orderBy(grades.date);
+  async getGradesByStudent(studentId: number): Promise<any[]> {
+    const result = await db
+      .select({
+        id: grades.id,
+        studentId: grades.studentId,
+        subjectId: grades.subjectId,
+        grade: grades.grade,
+        date: grades.date,
+        comment: grades.comment,
+        teacherId: grades.teacherId,
+        createdAt: grades.createdAt,
+        subjectName: subjects.name,
+        teacherFirstName: users.firstName,
+        teacherLastName: users.lastName,
+      })
+      .from(grades)
+      .leftJoin(subjects, eq(grades.subjectId, subjects.id))
+      .leftJoin(users, eq(grades.teacherId, users.id))
+      .where(eq(grades.studentId, studentId))
+      .orderBy(grades.date);
+    return result;
   }
 
   async getGradesByStudentAndSubject(studentId: number, subjectId: number): Promise<Grade[]> {

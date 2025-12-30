@@ -22,6 +22,7 @@ export const users = pgTable(
   inviteCode: text("invite_code").notNull(),
   parentOfId: integer("parent_of_id"),
   createdById: integer("created_by_id"),
+  studentCode: text("student_code"),
   createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => ({

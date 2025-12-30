@@ -156,9 +156,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
         role: user.role,
         classId: user.classId,
         className,
+        studentCode: user.studentCode,
       });
     } catch (error) {
       console.error("Get user error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.get("/api/student-code/:studentId", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const studentId = parseInt(req.params.studentId);
+      const requesterId = req.userId;
+      
+      if (requesterId !== studentId) {
+        const requester = await storage.getUser(requesterId!);
+        if (!requester || !['ceo', 'director', 'teacher'].includes(requester.role)) {
+          return res.status(403).json({ error: "Нет доступа к коду другого пользователя" });
+        }
+      }
+      
+      const user = await storage.getUser(studentId);
+      
+      if (!user) {
+        return res.status(404).json({ error: "Пользователь не найден" });
+      }
+      
+      if (user.role !== "student") {
+        return res.status(400).json({ error: "Код доступен только для учеников" });
+      }
+      
+      let studentCode = user.studentCode;
+      
+      if (!studentCode) {
+        studentCode = await storage.generateStudentCode(studentId);
+      }
+      
+      res.json({ code: studentCode });
+    } catch (error) {
+      console.error("Get student code error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  app.post("/api/parent/link-by-code", authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+      const { studentCode } = req.body;
+      const parentId = req.userId;
+      
+      if (!parentId) {
+        return res.status(401).json({ error: "Требуется авторизация" });
+      }
+      
+      const parent = await storage.getUser(parentId);
+      if (!parent || parent.role !== "parent") {
+        return res.status(403).json({ error: "Только родители могут привязывать детей" });
+      }
+      
+      if (!studentCode) {
+        return res.status(400).json({ error: "studentCode обязателен" });
+      }
+      
+      const child = await storage.getUserByStudentCode(studentCode.toUpperCase());
+      
+      if (!child) {
+        return res.status(404).json({ error: "Ученик с таким кодом не найден" });
+      }
+      
+      const link = await storage.linkParentToChild(parentId, child.id);
+      
+      res.json({
+        success: true,
+        childId: child.id,
+        childName: `${child.firstName} ${child.lastName}`,
+        message: `Ребёнок ${child.firstName} ${child.lastName} успешно добавлен!`
+      });
+    } catch (error) {
+      console.error("Link parent by code error:", error);
       res.status(500).json({ error: "Ошибка сервера" });
     }
   });
