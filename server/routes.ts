@@ -1,12 +1,15 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import { storage } from "./storage";
+import { db } from "./db";
 import path from "path";
 // @ts-ignore
 import multer from "multer";
 import fs from "fs";
 import { setupWebSocket, notifyNewMessage, addUserToChat, isUserOnline, broadcastToChat } from "./websocket";
 import { createSession, refreshTokens, revokeSession, revokeAllUserSessions, authMiddleware, AuthRequest } from "./auth";
+import { sentGifts, giftTypes, users } from "@shared/schema";
+import { eq, desc } from "drizzle-orm";
 
 function detectRoleFromCode(code: string): string | null {
   if (code === "CEO-MASTER-2024") return "ceo";
@@ -1726,6 +1729,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ count });
     } catch (error) {
       console.error("Get gifts count error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // Переключить видимость подарка
+  app.post("/api/gifts/:giftId/toggle-visibility", async (req: Request, res: Response) => {
+    try {
+      const giftId = parseInt(req.params.giftId);
+      const { isHidden } = req.body;
+      
+      const result = await db
+        .update(sentGifts)
+        .set({ isHidden: !!isHidden })
+        .where(eq(sentGifts.id, giftId))
+        .returning();
+      
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Подарок не найден" });
+      }
+      
+      res.json(result[0]);
+    } catch (error) {
+      console.error("Toggle gift visibility error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // Получить все подарки пользователя (для экрана "Мои подарки")
+  app.get("/api/users/:userId/gifts", async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      const gifts = await db
+        .select({
+          id: sentGifts.id,
+          senderId: sentGifts.senderId,
+          receiverId: sentGifts.receiverId,
+          giftTypeId: sentGifts.giftTypeId,
+          message: sentGifts.message,
+          isAnonymous: sentGifts.isAnonymous,
+          isOpened: sentGifts.isOpened,
+          isHidden: sentGifts.isHidden,
+          sentAt: sentGifts.createdAt,
+          giftType: giftTypes,
+          sender: users,
+        })
+        .from(sentGifts)
+        .leftJoin(giftTypes, eq(sentGifts.giftTypeId, giftTypes.id))
+        .leftJoin(users, eq(sentGifts.senderId, users.id))
+        .where(eq(sentGifts.receiverId, userId))
+        .orderBy(desc(sentGifts.createdAt));
+      
+      res.json(gifts);
+    } catch (error) {
+      console.error("Get user gifts error:", error);
       res.status(500).json({ error: "Ошибка сервера" });
     }
   });

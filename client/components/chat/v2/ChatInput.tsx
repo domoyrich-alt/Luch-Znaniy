@@ -3,7 +3,12 @@
  * Поле ввода со скрепкой, смайликами и микрофоном
  * 
  * Структура:
- * [Скрепка] [Поле ввода + превью] [Смайлик] [Отправить/Микрофон]
+ * [Скрепка] [Поле ввода + превью фото] [Смайлик] [Отправить/Микрофон]
+ * 
+ * Улучшения:
+ * - Фото вставляется в поле ввода
+ * - Можно добавить текст под фото
+ * - Поле расширяется при добавлении фото
  */
 
 import React, { useState, useRef, useCallback, useEffect, memo } from 'react';
@@ -17,6 +22,7 @@ import {
   Platform,
   UIManager,
   Image,
+  Dimensions,
 } from 'react-native';
 import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -26,17 +32,14 @@ import {
   TelegramDarkColors as colors, 
   TelegramSizes as sizes,
   TelegramTypography as typography,
-  TelegramAnimations as animations,
 } from '@/constants/telegramDarkTheme';
 
-// Включаем LayoutAnimation для Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// ======================
-// ТИПЫ
-// ======================
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 interface ReplyInfo {
   id: number;
   text: string;
@@ -66,15 +69,12 @@ interface ChatInputProps {
   bottomInset?: number;
 }
 
-// ======================
-// INPUT BUTTON
-// ======================
 const InputButton = memo(function InputButton({
   icon,
   iconFamily = 'feather',
   onPress,
   onLongPress,
-  size = sizes.iconMedium,
+  size = 22,
   color = colors.primary,
   disabled = false,
 }: {
@@ -104,7 +104,7 @@ const InputButton = memo(function InputButton({
     <Pressable
       style={({ pressed }) => [
         styles.inputButton,
-        pressed && !disabled && { opacity: 0.7 },
+        pressed && !disabled && { opacity: 0.7, backgroundColor: colors.surface },
         disabled && { opacity: 0.5 },
       ]}
       onPress={handlePress}
@@ -116,9 +116,6 @@ const InputButton = memo(function InputButton({
   );
 });
 
-// ======================
-// REPLY PREVIEW
-// ======================
 const ReplyPreview = memo(function ReplyPreview({
   replyTo,
   onCancel,
@@ -142,42 +139,44 @@ const ReplyPreview = memo(function ReplyPreview({
   );
 });
 
-// ======================
-// MEDIA PREVIEW
-// ======================
-const MediaPreviewComponent = memo(function MediaPreviewComponent({
+const InlineMediaPreview = memo(function InlineMediaPreview({
   media,
   onCancel,
 }: {
   media: MediaPreview;
   onCancel: () => void;
 }) {
+  const isPhoto = media.type === 'photo';
+  
   return (
-    <View style={styles.mediaPreviewContainer}>
-      {media.type === 'photo' ? (
-        <Image source={{ uri: media.uri }} style={styles.mediaPreviewImage} />
-      ) : (
-        <View style={styles.mediaPreviewFile}>
-          <Feather 
-            name={media.type === 'video' ? 'video' : 'file'} 
-            size={20} 
-            color={colors.primary} 
-          />
-        </View>
+    <View style={styles.inlineMediaContainer}>
+      <View style={styles.inlineMediaContent}>
+        {isPhoto ? (
+          <Image source={{ uri: media.uri }} style={styles.inlineMediaImage} />
+        ) : (
+          <View style={styles.inlineMediaFile}>
+            <Feather 
+              name={media.type === 'video' ? 'video' : 'file'} 
+              size={32} 
+              color={colors.primary} 
+            />
+          </View>
+        )}
+        <Pressable style={styles.inlineMediaClose} onPress={onCancel}>
+          <View style={styles.inlineMediaCloseCircle}>
+            <Feather name="x" size={14} color="#fff" />
+          </View>
+        </Pressable>
+      </View>
+      {media.name && !isPhoto && (
+        <ThemedText style={styles.inlineMediaName} numberOfLines={1}>
+          {media.name}
+        </ThemedText>
       )}
-      <ThemedText style={styles.mediaPreviewName} numberOfLines={1}>
-        {media.name || (media.type === 'photo' ? 'Фото' : 'Файл')}
-      </ThemedText>
-      <Pressable style={styles.mediaPreviewClose} onPress={onCancel}>
-        <Feather name="x" size={16} color={colors.textSecondary} />
-      </Pressable>
     </View>
   );
 });
 
-// ======================
-// CHAT INPUT
-// ======================
 export const ChatInput = memo(function ChatInput({
   value,
   onChangeText,
@@ -194,7 +193,7 @@ export const ChatInput = memo(function ChatInput({
   placeholder = 'Сообщение...',
   bottomInset = 0,
 }: ChatInputProps) {
-  const [inputHeight, setInputHeight] = useState(sizes.inputMinHeight);
+  const [inputHeight, setInputHeight] = useState(44);
   const [isRecording, setIsRecording] = useState(false);
   
   const inputRef = useRef<TextInput>(null);
@@ -206,7 +205,6 @@ export const ChatInput = memo(function ChatInput({
   const hasMedia = !!mediaPreview;
   const canSend = hasText || hasMedia;
 
-  // Анимация кнопки отправки/микрофона
   useEffect(() => {
     Animated.parallel([
       Animated.spring(sendButtonAnim, {
@@ -224,7 +222,6 @@ export const ChatInput = memo(function ChatInput({
     ]).start();
   }, [canSend]);
 
-  // Обработчик отправки
   const handleSend = useCallback(() => {
     if (!canSend || disabled) return;
     
@@ -234,7 +231,6 @@ export const ChatInput = memo(function ChatInput({
     onSend();
   }, [canSend, disabled, onSend]);
 
-  // Обработчик голосового сообщения
   const handleVoicePressIn = useCallback(() => {
     if (canSend) return;
     
@@ -269,11 +265,10 @@ export const ChatInput = memo(function ChatInput({
     onVoiceEnd?.();
   }, [isRecording, recordingAnim, onVoiceEnd]);
 
-  // Изменение высоты инпута
   const handleContentSizeChange = useCallback((e: any) => {
     const newHeight = Math.min(
-      Math.max(sizes.inputMinHeight, e.nativeEvent.contentSize.height),
-      sizes.inputMaxHeight
+      Math.max(44, e.nativeEvent.contentSize.height),
+      120
     );
     if (newHeight !== inputHeight) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -281,7 +276,6 @@ export const ChatInput = memo(function ChatInput({
     }
   }, [inputHeight]);
 
-  // Анимации для кнопок
   const sendScale = sendButtonAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0.5, 1],
@@ -294,34 +288,36 @@ export const ChatInput = memo(function ChatInput({
 
   return (
     <View style={[styles.container, { paddingBottom: Math.max(bottomInset, 8) }]}>
-      {/* Reply preview */}
       {replyTo && onCancelReply && (
         <ReplyPreview replyTo={replyTo} onCancel={onCancelReply} />
       )}
 
-      {/* Input row */}
       <View style={styles.inputRow}>
-        {/* Скрепка */}
         <InputButton
           icon="paperclip"
           onPress={onAttachPress}
           disabled={disabled}
         />
 
-        {/* Поле ввода */}
-        <View style={styles.inputContainer}>
-          {/* Превью медиа */}
+        <View style={[
+          styles.inputContainer,
+          hasMedia && styles.inputContainerWithMedia,
+        ]}>
           {mediaPreview && onCancelMedia && (
-            <MediaPreviewComponent media={mediaPreview} onCancel={onCancelMedia} />
+            <InlineMediaPreview media={mediaPreview} onCancel={onCancelMedia} />
           )}
 
           <TextInput
             ref={inputRef}
-            style={[styles.textInput, { height: inputHeight }]}
+            style={[
+              styles.textInput, 
+              { height: inputHeight },
+              hasMedia && styles.textInputWithMedia,
+            ]}
             value={value}
             onChangeText={onChangeText}
             onContentSizeChange={handleContentSizeChange}
-            placeholder={placeholder}
+            placeholder={hasMedia ? "Добавить подпись..." : placeholder}
             placeholderTextColor={colors.textTertiary}
             multiline
             maxLength={4096}
@@ -329,16 +325,13 @@ export const ChatInput = memo(function ChatInput({
           />
         </View>
 
-        {/* Смайлик */}
         <InputButton
           icon="smile"
           onPress={onEmojiPress}
           disabled={disabled}
         />
 
-        {/* Отправить / Микрофон */}
         <View style={styles.sendButtonContainer}>
-          {/* Кнопка отправки */}
           <Animated.View
             style={[
               styles.sendButton,
@@ -350,14 +343,13 @@ export const ChatInput = memo(function ChatInput({
             pointerEvents={canSend ? 'auto' : 'none'}
           >
             <Pressable
-              style={[styles.sendButtonInner, { backgroundColor: colors.primary }]}
+              style={styles.sendButtonInner}
               onPress={handleSend}
             >
-              <Ionicons name="send" size={18} color={colors.textPrimary} />
+              <Ionicons name="send" size={18} color="#fff" />
             </Pressable>
           </Animated.View>
 
-          {/* Кнопка микрофона */}
           <Animated.View
             style={[
               styles.micButton,
@@ -380,7 +372,7 @@ export const ChatInput = memo(function ChatInput({
                 <Ionicons 
                   name="mic" 
                   size={22} 
-                  color={isRecording ? colors.textPrimary : colors.primary} 
+                  color={isRecording ? '#fff' : colors.primary} 
                 />
               </Animated.View>
             </Pressable>
@@ -391,53 +383,51 @@ export const ChatInput = memo(function ChatInput({
   );
 });
 
-// ======================
-// СТИЛИ
-// ======================
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#17212B',
     borderTopWidth: 1,
-    borderTopColor: '#2D2D2D',
+    borderTopColor: '#232E3C',
   },
   
-  // Reply
   replyContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2D2D2D',
+    paddingVertical: 10,
+    backgroundColor: '#1E2936',
+    borderBottomWidth: 1,
+    borderBottomColor: '#232E3C',
   },
   replyLine: {
     width: 2,
-    height: '100%',
-    backgroundColor: '#3390EC',
+    height: 36,
+    backgroundColor: '#5EB5F7',
     borderRadius: 1,
-    marginRight: 8,
+    marginRight: 10,
   },
   replyContent: {
     flex: 1,
   },
   replyName: {
-    ...typography.caption,
-    color: '#3390EC',
+    fontSize: 14,
+    color: '#5EB5F7',
     fontWeight: '600',
+    marginBottom: 2,
   },
   replyText: {
-    ...typography.caption,
-    color: '#707579',
+    fontSize: 14,
+    color: '#8B9BA5',
   },
   replyClose: {
     padding: 8,
+    marginLeft: 8,
   },
   
-  // Input row
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     paddingVertical: 8,
   },
   
@@ -449,16 +439,18 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   
-  // Input container
   inputContainer: {
     flex: 1,
-    backgroundColor: '#2D2D2D',
-    borderRadius: 22,
-    marginHorizontal: 8,
+    backgroundColor: '#242F3D',
+    borderRadius: 20,
+    marginHorizontal: 4,
     overflow: 'hidden',
   },
+  inputContainerWithMedia: {
+    borderRadius: 16,
+  },
+  
   textInput: {
-    ...typography.bodyMedium,
     color: '#FFFFFF',
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -466,42 +458,53 @@ const styles = StyleSheet.create({
     maxHeight: 120,
     fontSize: 16,
   },
+  textInputWithMedia: {
+    paddingTop: 8,
+    minHeight: 40,
+  },
   
-  // Media preview
-  mediaPreviewContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2D2D2D',
-    backgroundColor: '#252525',
+  inlineMediaContainer: {
+    padding: 8,
+    paddingBottom: 0,
   },
-  mediaPreviewImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 10,
+  inlineMediaContent: {
+    position: 'relative',
+    alignSelf: 'flex-start',
   },
-  mediaPreviewFile: {
-    width: 50,
-    height: 50,
-    borderRadius: 10,
-    backgroundColor: '#2D2D2D',
+  inlineMediaImage: {
+    width: SCREEN_WIDTH * 0.5,
+    height: SCREEN_WIDTH * 0.35,
+    borderRadius: 12,
+    backgroundColor: '#1A2430',
+  },
+  inlineMediaFile: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    backgroundColor: '#1A2430',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  mediaPreviewName: {
-    ...typography.caption,
-    color: '#707579',
-    flex: 1,
-    marginLeft: 12,
+  inlineMediaClose: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
   },
-  mediaPreviewClose: {
-    padding: 4,
-    marginLeft: 8,
+  inlineMediaCloseCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inlineMediaName: {
+    fontSize: 12,
+    color: '#8B9BA5',
+    marginTop: 4,
+    marginLeft: 4,
   },
   
-  // Send/Mic buttons
   sendButtonContainer: {
     width: 44,
     height: 44,
@@ -516,7 +519,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#3390EC',  // Синий Telegram
+    backgroundColor: '#5EB5F7',
     justifyContent: 'center',
     alignItems: 'center',
   },

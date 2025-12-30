@@ -345,6 +345,7 @@ export const sentGifts = pgTable("sent_gifts", {
   message: text("message"),
   isAnonymous: boolean("is_anonymous").default(false),
   isOpened: boolean("is_opened").default(false),
+  isHidden: boolean("is_hidden").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   openedAt: timestamp("opened_at"),
 });

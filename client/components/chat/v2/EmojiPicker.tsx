@@ -32,9 +32,10 @@ import {
 } from '@/constants/telegramDarkTheme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const PICKER_HEIGHT = 300;
-const NUM_COLUMNS = 8;
-const EMOJI_SIZE = (SCREEN_WIDTH - sizes.paddingL * 2) / NUM_COLUMNS;
+const PICKER_HEIGHT = 320;
+const NUM_COLUMNS = 7;
+const GRID_PADDING = 16;
+const EMOJI_SIZE = Math.floor((SCREEN_WIDTH - GRID_PADDING * 2) / NUM_COLUMNS);
 
 // ======================
 // КАТЕГОРИИ ЭМОДЗИ
@@ -422,8 +423,9 @@ const styles = StyleSheet.create({
   },
   
   emojiGrid: {
-    paddingHorizontal: 8,
-    paddingTop: 8,
+    paddingHorizontal: GRID_PADDING,
+    paddingTop: 12,
+    paddingBottom: 20,
   },
   
   emojiItem: {
@@ -434,7 +436,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   emojiText: {
-    fontSize: 28,
+    fontSize: Math.min(28, EMOJI_SIZE - 12),
+    textAlign: 'center',
   },
   
   emptyContainer: {
