@@ -1,0 +1,130 @@
+.message-input-container {
+  position: relative;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-color);
+}
+
+.message-input-editing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+}
+
+.message-input-editing span {
+  color: var(--primary-blue);
+  font-weight: 500;
+}
+
+.message-input-editing button {
+  color: var(--text-secondary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.message-input-editing button:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.message-input {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+}
+
+.message-input-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: var(--text-secondary);
+  border-radius: 50%;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.message-input-button:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.message-input-button:active {
+  transform: scale(0.95);
+}
+
+.message-input-field-wrapper {
+  flex: 1;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-sm) var(--spacing-md);
+  transition: all var(--transition-fast);
+}
+
+.message-input-field-wrapper:focus-within {
+  background: var(--bg-tertiary);
+}
+
+.message-input-field {
+  width: 100%;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+}
+
+.message-input-field::placeholder {
+  color: var(--text-tertiary);
+}
+
+.message-input-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--primary-blue);
+  color: white;
+  border-radius: 50%;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.message-input-send:hover {
+  background: var(--primary-blue-dark);
+  transform: scale(1.05);
+}
+
+.message-input-send:active {
+  transform: scale(0.95);
+}
+
+.emoji-picker-wrapper {
+  position: absolute;
+  bottom: 70px;
+  right: 20px;
+  z-index: var(--z-dropdown);
+  animation: slideUpFadeIn 0.2s ease-out;
+}
+
+/* Custom scrollbar for textarea */
+.message-input-field::-webkit-scrollbar {
+  width: 4px;
+}
+
+.message-input-field::-webkit-scrollbar-thumb {
+  background: var(--text-tertiary);
+  border-radius: 2px;
+}
