@@ -1,25 +1,6 @@
-function getChatApiUrl(): string {
-  const host = process.env.EXPO_PUBLIC_DOMAIN;
+import { getApiUrl as getBaseApiUrl } from "@/lib/query-client";
 
-  if (!host) {
-    return "http://localhost:5000";
-  }
-
-  if (/^https?:\/\//i.test(host)) {
-    return host;
-  }
-
-  const isLocal =
-    host.includes("localhost") ||
-    host.startsWith("127.") ||
-    host.startsWith("10.") ||
-    host.startsWith("192.168.") ||
-    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
-
-  return `${isLocal ? "http" : "https"}://${host}`;
-}
-
-const API_URL = getChatApiUrl();
+const API_URL = getBaseApiUrl();
 
 export interface PrivateMessage {
   id: number;

@@ -10,12 +10,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
-  Pressable,
   Animated,
   Modal,
-  PanGestureHandler,
-  PanGestureHandlerGestureEvent,
 } from 'react-native';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { Feather } from '@expo/vector-icons';
 import { ThemedText } from '@/components/ThemedText';
 import * as Haptics from 'expo-haptics';
@@ -30,6 +28,7 @@ interface VoiceRecorderProps {
 
 export function VoiceRecorder({ visible, onSend, onCancel }: VoiceRecorderProps) {
   const [duration, setDuration] = useState(0);
+  const [isCancelHint, setIsCancelHint] = useState(false);
   const translateX = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
 
@@ -38,6 +37,7 @@ export function VoiceRecorder({ visible, onSend, onCancel }: VoiceRecorderProps)
   useEffect(() => {
     if (visible) {
       setDuration(0);
+      setIsCancelHint(false);
       translateX.setValue(0);
       opacity.setValue(1);
 
@@ -53,6 +53,16 @@ export function VoiceRecorder({ visible, onSend, onCancel }: VoiceRecorderProps)
     };
   }, [visible]);
 
+  useEffect(() => {
+    const sub = translateX.addListener(({ value }) => {
+      setIsCancelHint(value < -50);
+    });
+
+    return () => {
+      translateX.removeListener(sub);
+    };
+  }, [translateX]);
+
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -64,8 +74,8 @@ export function VoiceRecorder({ visible, onSend, onCancel }: VoiceRecorderProps)
     { useNativeDriver: true }
   );
 
-  const onHandlerStateChange = ({ nativeEvent }: PanGestureHandlerGestureEvent) => {
-    if (nativeEvent.state === 5) { // STATE_END
+  const onHandlerStateChange = ({ nativeEvent }: any) => {
+    if (nativeEvent.state === State.END) {
       if (nativeEvent.translationX < CANCEL_THRESHOLD) {
         // Отмена с анимацией
         Animated.parallel([
@@ -142,7 +152,7 @@ export function VoiceRecorder({ visible, onSend, onCancel }: VoiceRecorderProps)
               </View>
 
               <ThemedText style={styles.hint}>
-                {translateX.__getValue() < -50 ? 'Отпустите для отмены' : '↑ Отпустите для отправки'}
+                {isCancelHint ? 'Отпустите для отмены' : '↑ Отпустите для отправки'}
               </ThemedText>
             </View>
           </Animated.View>

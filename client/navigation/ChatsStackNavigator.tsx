@@ -1,9 +1,10 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import TelegramChatsListScreen from "@/screens/TelegramChatsListScreen";
-import TelegramChatScreen from "@/screens/TelegramChatScreen";
-import TelegramChatProfileScreen from "@/screens/TelegramChatProfileScreen";
-import TelegramSearchScreen from "@/screens/TelegramSearchScreen";
+// V2 - Новая архитектура
+import { ChatsListScreenV2, ChatScreenV2 } from "@/screens/v2";
+// Старые экраны (для обратной совместимости)
+import ChatsListScreen from "@/screens/ChatsListScreen";
+import UserProfileScreen from "@/screens/UserProfileScreen";
 import ChatScreen from "@/screens/ChatsScreen";
 import ChatScreenNew from "@/screens/ChatScreenNew";
 import PrivateChatScreen from "@/screens/PrivateChatScreen";
@@ -14,6 +15,9 @@ import GroupInfoScreen from "@/screens/GroupInfoScreen";
 import ContactsScreen from "@/screens/ContactsScreen";
 import NewChatScreen from "@/screens/NewChatScreen";
 import { useTheme } from "@/hooks/useTheme";
+
+// Флаг для переключения на новую архитектуру
+const USE_V2_UI = true;
 
 export type ChatsStackParamList = {
   ChatsList: undefined;
@@ -41,13 +45,12 @@ export type ChatsStackParamList = {
     phoneNumber?: string;
     chatType?: 'private' | 'group';
   };
-  TelegramSearch: undefined;
-  ChatProfile: {
-    chatId: string;
-    otherUserId?: number;
-    otherUserName?: string;
-    phoneNumber?: string;
-    chatType?: 'private' | 'group';
+  UserProfile: {
+    userId: number;
+    firstName: string;
+    lastName: string;
+    username: string;
+    avgGrade?: number;
   };
   PrivateChat: {
     chatId: string;
@@ -89,17 +92,8 @@ export default function ChatsStackNavigator() {
     >
       <Stack.Screen
         name="ChatsList"
-        component={TelegramChatsListScreen}
+        component={USE_V2_UI ? ChatsListScreenV2 : ChatsListScreen}
         options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="TelegramSearch"
-        component={TelegramSearchScreen}
-        options={{ 
-          headerShown: false,
-          presentation: 'modal',
-          animation: 'fade_from_bottom',
-        }}
       />
       <Stack.Screen
         name="Chat"
@@ -108,21 +102,13 @@ export default function ChatsStackNavigator() {
       />
       <Stack.Screen
         name="ChatNew"
-        component={TelegramChatScreen}
+        component={USE_V2_UI ? ChatScreenV2 : ChatScreenNew}
         options={{ headerShown: false }}
       />
       <Stack.Screen
         name="TelegramChat"
-        component={TelegramChatScreen}
+        component={USE_V2_UI ? ChatScreenV2 : ChatScreenNew}
         options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="ChatProfile"
-        component={TelegramChatProfileScreen}
-        options={{ 
-          headerShown: false,
-          presentation: 'card',
-        }}
       />
       <Stack.Screen
         name="PsychologistChat"
@@ -171,6 +157,14 @@ export default function ChatsStackNavigator() {
         name="SearchMessages"
         component={SearchMessagesScreen}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="UserProfile"
+        component={UserProfileScreen}
+        options={{ 
+          headerShown: false,
+          presentation: 'card',
+        }}
       />
     </Stack.Navigator>
   );

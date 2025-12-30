@@ -20,10 +20,9 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
+import { getApiUrl as getBaseApiUrl } from "@/lib/query-client";
 
-const API_URL = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : "http://localhost:5000";
+const API_URL = getBaseApiUrl();
 
 export default function RegisterProfileScreen() {
   const insets = useSafeAreaInsets();

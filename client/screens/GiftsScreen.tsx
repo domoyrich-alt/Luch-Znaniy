@@ -23,6 +23,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useStars } from "@/context/StarsContext";
+import { getApiUrl as getBaseApiUrl } from "@/lib/query-client";
 import { NEON_COLORS } from "@/constants/neonTheme";
 
 const { width } = Dimensions.get("window");
@@ -81,14 +82,6 @@ interface ReceivedGift {
   senderLastName?: string;
 }
 
-function getApiUrl(): string {
-  const host = process.env.EXPO_PUBLIC_DOMAIN;
-  if (!host) return "http://localhost:5000";
-  if (/^https?:\/\//i.test(host)) return host;
-  const isLocal = host.includes("localhost") || host.startsWith("192.168.");
-  return `${isLocal ? "http" : "https"}://${host}`;
-}
-
 // Дефолтные подарки для отображения
 const DEFAULT_GIFTS: GiftType[] = [
   { id: 1, name: "Плюшевый мишка", emoji: "🧸", price: 10, rarity: "common" },
@@ -106,6 +99,7 @@ const DEFAULT_GIFTS: GiftType[] = [
 ];
 
 export default function GiftsScreen() {
+  const API_URL = getBaseApiUrl();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { theme } = useTheme();
@@ -131,8 +125,7 @@ export default function GiftsScreen() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedRecipient, setSelectedRecipient] = useState<any>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
-  
-  const API_URL = getApiUrl();
+
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {

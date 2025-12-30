@@ -8,7 +8,7 @@
 export { Chat } from './Chat';
 export { Message } from './Message';
 export { User } from './User';
-export { chatManager, ChatManager } from './ChatManager';
+export { chatManager } from './ChatManager';
 
 // Типы Chat
 export type { ChatData, ChatType } from './Chat';

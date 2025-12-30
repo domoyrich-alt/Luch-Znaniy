@@ -21,6 +21,7 @@ import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
+import { getApiUrl as getBaseApiUrl } from "@/lib/query-client";
 
 const { width } = Dimensions.get("window");
 
@@ -58,14 +59,6 @@ interface FriendRequest {
   createdAt: string;
 }
 
-function getApiUrl(): string {
-  const host = process.env.EXPO_PUBLIC_DOMAIN;
-  if (!host) return "http://localhost:5000";
-  if (/^https?:\/\//i.test(host)) return host;
-  const isLocal = host.includes("localhost") || host.startsWith("192.168.");
-  return `${isLocal ? "http" : "https"}://${host}`;
-}
-
 export default function FriendsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -80,7 +73,7 @@ export default function FriendsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
-  const API_URL = getApiUrl();
+  const API_URL = getBaseApiUrl();
   const tabAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {

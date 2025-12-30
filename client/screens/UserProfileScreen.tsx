@@ -33,7 +33,6 @@ import Animated, {
 import { BlurView } from "expo-blur";
 
 import { ThemedText } from "@/components/ThemedText";
-import type { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import { useAuth } from "@/context/AuthContext";
 import { useStars } from "@/context/StarsContext";
 import { apiDelete, apiGet, apiPost } from "@/lib/api";
@@ -61,7 +60,15 @@ const NEON = {
   glow: 'rgba(139, 92, 246, 0.5)',
 };
 
-type UserProfileRouteProp = RouteProp<HomeStackParamList, 'UserProfile'>;
+type UserProfileParams = {
+  userId: number;
+  firstName: string;
+  lastName: string;
+  username: string;
+  avgGrade?: number;
+};
+
+type UserProfileRouteProp = RouteProp<{ UserProfile: UserProfileParams }, 'UserProfile'>;
 
 type RemoteUserProfile = {
   userId: number;

@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { Platform } from "react-native";
 
 /**
  * Gets the base URL for the Express API server
@@ -10,21 +11,38 @@ export function getApiUrl(): string {
     return directUrl.endsWith("/") ? directUrl.slice(0, -1) : directUrl;
   }
 
-  const host = process.env.EXPO_PUBLIC_DOMAIN;
+  const rawHost = process.env.EXPO_PUBLIC_DOMAIN;
+  const host = rawHost?.trim();
   if (host && host.length > 0) {
-    // если уже есть протокол
-    if (host.startsWith("http://") || host.startsWith("https://")) {
-      return host.endsWith("/") ? host.slice(0, -1) : host;
+    // Если уже есть протокол — берём origin (без path/query)
+    if (/^https?:\/\//i.test(host)) {
+      try {
+        const url = new URL(host);
+        return url.origin;
+      } catch {
+        return host.endsWith("/") ? host.slice(0, -1) : host;
+      }
     }
 
-    const isLocal =
-      host.includes("localhost") ||
-      host.startsWith("127.") ||
-      host.startsWith("10.") ||
-      host.startsWith("192.168.") ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+    // Если по ошибке передали с путём (domain/path) — отрежем путь
+    const hostOnly = host.split("/")[0].trim();
 
-    return `${isLocal ? "http" : "https"}://${host}`;
+    const isLocal =
+      hostOnly.includes("localhost") ||
+      hostOnly.startsWith("127.") ||
+      hostOnly.startsWith("10.") ||
+      hostOnly.startsWith("192.168.") ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostOnly);
+
+    return `${isLocal ? "http" : "https"}://${hostOnly}`;
+  }
+
+  if (__DEV__ && Platform.OS !== "web") {
+    // На физическом устройстве/эмуляторе localhost:5000 обычно недоступен.
+    console.warn(
+      "[API] EXPO_PUBLIC_DOMAIN/EXPO_PUBLIC_API_URL is not set; falling back to http://localhost:5000. " +
+        "If you are running on a phone via Expo Go, set EXPO_PUBLIC_DOMAIN to your tunnel domain (e.g. xxxx.trycloudflare.com) and restart Expo with --clear.",
+    );
   }
 
   // fallback

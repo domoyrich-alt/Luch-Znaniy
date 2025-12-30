@@ -3,7 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import HomeScreen from "@/screens/HomeScreen";
 import GradesScreen from "@/screens/GradesScreen";
 import ClassListScreen from "@/screens/ClassListScreen";
-import TelegramUserProfileScreen from "@/screens/TelegramUserProfileScreen";
+import UserProfileScreen from "@/screens/UserProfileScreen";
 import TeacherJournalScreen from "@/screens/TeacherJournalScreen";
 import ScheduleScreen from "@/screens/ScheduleScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
@@ -44,7 +44,7 @@ export default function HomeStackNavigator() {
       />
       <Stack.Screen
         name="UserProfile"
-        component={TelegramUserProfileScreen}
+        component={UserProfileScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -10,18 +10,296 @@ import {
   RefreshControl,
   Animated,
   Dimensions,
+  Platform,
+  PanResponder,
+  GestureResponderEvent,
+  PanResponderGestureState,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useFocusEffect } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
 import ChatService, { PrivateChat } from "@/services/ChatService";
+
+// Константы для свайпа (улучшенные как в Qt)
+const SWIPE_THRESHOLD = 60;           // Порог для срабатывания действия
+const SWIPE_ACTION_WIDTH = 80;        // Ширина области действия
+const MAX_SWIPE_OFFSET = 120;         // Максимальное смещение
+const HORIZONTAL_THRESHOLD = 10;      // Минимальное смещение для определения направления
+const DIRECTION_LOCK_RATIO = 1.5;     // Соотношение для блокировки направления
+const ANIMATION_DURATION = 150;       // Длительность анимации
+
+// Компонент свайпа для элемента чата с улучшенной обработкой жестов
+interface SwipeableChatRowProps {
+  children: React.ReactNode;
+  onDelete?: () => void;
+  onPin?: () => void;
+  onMute?: () => void;
+  onSwipeStart?: () => void;  // Уведомление о начале свайпа
+  onSwipeEnd?: () => void;    // Уведомление об окончании свайпа
+  theme: any;
+}
+
+function SwipeableChatRow({ children, onDelete, onPin, onMute, onSwipeStart, onSwipeEnd, theme }: SwipeableChatRowProps) {
+  const translateX = React.useRef(new Animated.Value(0)).current;
+  const leftOpacity = React.useRef(new Animated.Value(0)).current;
+  const rightOpacity = React.useRef(new Animated.Value(0)).current;
+  const leftScale = React.useRef(new Animated.Value(0.8)).current;
+  const rightScale = React.useRef(new Animated.Value(0.8)).current;
+  
+  const hasTriggeredHaptic = React.useRef(false);
+  const isSwiping = React.useRef(false);
+  const isDirectionLocked = React.useRef(false);
+
+  // Эластичное сопротивление за пределами лимита
+  const applyElasticResistance = (offset: number): number => {
+    if (Math.abs(offset) <= MAX_SWIPE_OFFSET) {
+      return offset;
+    }
+    const overflow = Math.abs(offset) - MAX_SWIPE_OFFSET;
+    const resistance = MAX_SWIPE_OFFSET + (overflow * 0.3);
+    return offset > 0 ? resistance : -resistance;
+  };
+
+  const resetAnimation = useCallback(() => {
+    Animated.parallel([
+      Animated.spring(translateX, {
+        toValue: 0,
+        tension: 300,
+        friction: 25,
+        useNativeDriver: true,
+      }),
+      Animated.timing(leftOpacity, {
+        toValue: 0,
+        duration: ANIMATION_DURATION,
+        useNativeDriver: true,
+      }),
+      Animated.timing(rightOpacity, {
+        toValue: 0,
+        duration: ANIMATION_DURATION,
+        useNativeDriver: true,
+      }),
+      Animated.spring(leftScale, {
+        toValue: 0.8,
+        tension: 300,
+        friction: 25,
+        useNativeDriver: true,
+      }),
+      Animated.spring(rightScale, {
+        toValue: 0.8,
+        tension: 300,
+        friction: 25,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    
+    isSwiping.current = false;
+    isDirectionLocked.current = false;
+    onSwipeEnd?.();
+  }, [translateX, leftOpacity, rightOpacity, leftScale, rightScale, onSwipeEnd]);
+
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      
+      onMoveShouldSetPanResponder: (
+        _: GestureResponderEvent,
+        gestureState: PanResponderGestureState
+      ) => {
+        const { dx, dy } = gestureState;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        
+        // ГИСТЕРЕЗИС: Определяем направление жеста
+        // Горизонтальное движение должно преобладать над вертикальным
+        if (absDx > HORIZONTAL_THRESHOLD && absDx > absDy * DIRECTION_LOCK_RATIO) {
+          isSwiping.current = true;
+          isDirectionLocked.current = true;
+          onSwipeStart?.(); // Уведомляем о начале свайпа
+          return true;
+        }
+        return false;
+      },
+      
+      onPanResponderGrant: () => {
+        hasTriggeredHaptic.current = false;
+        isSwiping.current = false;
+        isDirectionLocked.current = false;
+      },
+      
+      onPanResponderMove: (
+        _: GestureResponderEvent,
+        gestureState: PanResponderGestureState
+      ) => {
+        if (!isSwiping.current) return;
+        
+        const { dx } = gestureState;
+        
+        // Применяем эластичное сопротивление
+        const elasticDx = applyElasticResistance(dx);
+        translateX.setValue(elasticDx);
+        
+        // Показываем действия с анимацией масштаба
+        if (dx < -10) {
+          const progress = Math.min(Math.abs(dx) / SWIPE_THRESHOLD, 1);
+          leftOpacity.setValue(progress);
+          rightOpacity.setValue(0);
+          leftScale.setValue(0.8 + (progress * 0.4));
+        } else if (dx > 10) {
+          const progress = Math.min(dx / SWIPE_THRESHOLD, 1);
+          rightOpacity.setValue(progress);
+          leftOpacity.setValue(0);
+          rightScale.setValue(0.8 + (progress * 0.4));
+        } else {
+          leftOpacity.setValue(0);
+          rightOpacity.setValue(0);
+          leftScale.setValue(0.8);
+          rightScale.setValue(0.8);
+        }
+        
+        // Haptic при достижении порога
+        if (Math.abs(dx) >= SWIPE_THRESHOLD && !hasTriggeredHaptic.current) {
+          if (Platform.OS !== 'web') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
+          hasTriggeredHaptic.current = true;
+        }
+      },
+      
+      onPanResponderRelease: (
+        _: GestureResponderEvent,
+        gestureState: PanResponderGestureState
+      ) => {
+        if (!isSwiping.current) return;
+        
+        const { dx } = gestureState;
+        
+        if (dx <= -SWIPE_THRESHOLD && onDelete) {
+          if (Platform.OS !== 'web') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+          onDelete();
+        } else if (dx >= SWIPE_THRESHOLD && onPin) {
+          if (Platform.OS !== 'web') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+          onPin();
+        }
+        
+        resetAnimation();
+      },
+      
+      onPanResponderTerminate: () => {
+        resetAnimation();
+      },
+      
+      // НЕ отдаём контроль при активном свайпе - блокируем вертикальный скролл
+      onPanResponderTerminationRequest: () => !isSwiping.current,
+    })
+  ).current;
+
+  return (
+    <View style={swipeStyles.container}>
+      {/* Левое действие (удалить) - справа */}
+      <Animated.View
+        style={[
+          swipeStyles.actionContainer,
+          swipeStyles.leftAction,
+          { opacity: leftOpacity },
+        ]}
+      >
+        <Animated.View 
+          style={[
+            swipeStyles.actionButton, 
+            { backgroundColor: '#FF3B30', transform: [{ scale: leftScale }] }
+          ]}
+        >
+          <Feather name="trash-2" size={22} color="#FFF" />
+          <ThemedText style={swipeStyles.actionText}>Удалить</ThemedText>
+        </Animated.View>
+      </Animated.View>
+
+      {/* Правое действие (закрепить) - слева */}
+      <Animated.View
+        style={[
+          swipeStyles.actionContainer,
+          swipeStyles.rightAction,
+          { opacity: rightOpacity },
+        ]}
+      >
+        <Animated.View 
+          style={[
+            swipeStyles.actionButton, 
+            { backgroundColor: theme.primary, transform: [{ scale: rightScale }] }
+          ]}
+        >
+          <Feather name="bookmark" size={22} color="#FFF" />
+          <ThemedText style={swipeStyles.actionText}>Закрепить</ThemedText>
+        </Animated.View>
+      </Animated.View>
+
+      {/* Контент */}
+      <Animated.View
+        style={[
+          swipeStyles.content,
+          { 
+            transform: [{ translateX }],
+            backgroundColor: theme.backgroundDefault,
+          },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
+const swipeStyles = StyleSheet.create({
+  container: {
+    position: 'relative',
+    overflow: 'hidden',
+    // Фиксированная высота как в Telegram (72px)
+    minHeight: 72,
+  },
+  actionContainer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: SWIPE_ACTION_WIDTH,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  leftAction: {
+    right: 0,
+  },
+  rightAction: {
+    left: 0,
+  },
+  actionButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    width: '100%',
+    height: '100%',
+    gap: 4,
+  },
+  actionText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  content: {
+    zIndex: 1,
+  },
+});
 
 export default function ChatsListScreen() {
   const headerHeight = useHeaderHeight();
@@ -87,7 +365,32 @@ export default function ChatsListScreen() {
       chatId: chat.id,
       otherUserId: chat.otherUser.userId,
       otherUserName: chat.otherUser.username,
+      otherUserAvatar: chat.otherUser.avatarUrl,
+      isOnline: chat.otherUser.isOnline ?? false,
     });
+  };
+
+  const handleDeleteChat = (chatId: number) => {
+    Alert.alert(
+      "Удалить чат",
+      "Вы уверены, что хотите удалить этот чат?",
+      [
+        { text: "Отмена", style: "cancel" },
+        { 
+          text: "Удалить", 
+          style: "destructive",
+          onPress: () => {
+            // TODO: Реализовать удаление чата
+            setChats(prev => prev.filter(c => c.id !== chatId));
+          }
+        },
+      ]
+    );
+  };
+
+  const handlePinChat = (chatId: number) => {
+    // TODO: Реализовать закрепление чата
+    Alert.alert("Закреплено", "Чат закреплён");
   };
 
   const renderChatItem = ({ item }: { item: PrivateChat }) => {
@@ -102,70 +405,76 @@ export default function ChatsListScreen() {
       : "";
 
     return (
-      <Pressable
-        style={({ pressed }) => [
-          styles.chatItem,
-          { 
-            backgroundColor: pressed ? theme.backgroundSecondary : theme.backgroundDefault,
-          },
-        ]}
-        onPress={() => openChat(item)}
+      <SwipeableChatRow
+        onDelete={() => handleDeleteChat(item.id)}
+        onPin={() => handlePinChat(item.id)}
+        theme={theme}
       >
-        {/* АВАТАР С ОНЛАЙН СТАТУСОМ */}
-        <View style={styles.avatarSection}>
-          <View
-            style={[
-              styles.avatar,
-              { backgroundColor: theme.primary },
-            ]}
-          >
-            <ThemedText style={styles.avatarText}>
-              {(otherUser.firstName || otherUser.username || "?").charAt(0).toUpperCase()}
-            </ThemedText>
+        <Pressable
+          style={({ pressed }) => [
+            styles.chatItem,
+            { 
+              backgroundColor: pressed ? theme.backgroundSecondary : theme.backgroundDefault,
+            },
+          ]}
+          onPress={() => openChat(item)}
+        >
+          {/* АВАТАР С ОНЛАЙН СТАТУСОМ */}
+          <View style={styles.avatarSection}>
+            <View
+              style={[
+                styles.avatar,
+                { backgroundColor: theme.primary },
+              ]}
+            >
+              <ThemedText style={styles.avatarText}>
+                {(otherUser.firstName || otherUser.username || "?").charAt(0).toUpperCase()}
+              </ThemedText>
+            </View>
+            
+            {/* ЗЕЛЕНАЯ ТОЧКА ОНЛАЙНА */}
+            {otherUser.isOnline && (
+              <View style={styles.onlineIndicator} />
+            )}
           </View>
-          
-          {/* ЗЕЛЕНАЯ ТОЧКА ОНЛАЙНА */}
-          {otherUser.isOnline && (
-            <View style={styles.onlineIndicator} />
-          )}
-        </View>
 
-        {/* ОСНОВНОЙ КОНТЕНТ */}
-        <View style={styles.chatMainContent}>
-          {/* ВЕРХНЯЯ СТРОКА: ИМЯ И ВРЕМЯ */}
-          <View style={styles.chatHeaderRow}>
-            <ThemedText 
-              style={styles.chatUsername} 
+          {/* ОСНОВНОЙ КОНТЕНТ */}
+          <View style={styles.chatMainContent}>
+            {/* ВЕРХНЯЯ СТРОКА: ИМЯ И ВРЕМЯ */}
+            <View style={styles.chatHeaderRow}>
+              <ThemedText 
+                style={styles.chatUsername} 
+                numberOfLines={1}
+              >
+                {otherUser.firstName 
+                  ? `${otherUser.firstName}${otherUser.lastName ? ` ${otherUser.lastName}` : ""}` 
+                  : otherUser.username 
+                    ? `@${otherUser.username}` 
+                    : "Пользователь"}
+              </ThemedText>
+              <ThemedText style={styles.chatTime}>
+                {formattedTime}
+              </ThemedText>
+            </View>
+
+            {/* НИЖНЯЯ СТРОКА: СТАТУС/БИО */}
+            <ThemedText
+              style={[styles.chatStatus, { color: theme.textSecondary }]}
               numberOfLines={1}
             >
-              {otherUser.firstName 
-                ? `${otherUser.firstName}${otherUser.lastName ? ` ${otherUser.lastName}` : ""}` 
-                : otherUser.username 
-                  ? `@${otherUser.username}` 
-                  : "Пользователь"}
-            </ThemedText>
-            <ThemedText style={styles.chatTime}>
-              {formattedTime}
+              {otherUser.status || otherUser.bio || "Нет статуса"}
             </ThemedText>
           </View>
 
-          {/* НИЖНЯЯ СТРОКА: СТАТУС/БИО */}
-          <ThemedText
-            style={[styles.chatStatus, { color: theme.textSecondary }]}
-            numberOfLines={1}
-          >
-            {otherUser.status || otherUser.bio || "Нет статуса"}
-          </ThemedText>
-        </View>
-
-        {/* РАЗДЕЛИТЕЛЬ */}
-        <View
-          style={[
-            styles.separator,
-            { backgroundColor: `${theme.textSecondary}20` },
-          ]}
-        />
-      </Pressable>
+          {/* РАЗДЕЛИТЕЛЬ */}
+          <View
+            style={[
+              styles.separator,
+              { backgroundColor: `${theme.textSecondary}20` },
+            ]}
+          />
+        </Pressable>
+      </SwipeableChatRow>
     );
   };
 
@@ -381,12 +690,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   
-  // CHAT ITEM (TELEGRAM STYLE)
+  // CHAT ITEM (TELEGRAM STYLE) - Фиксированная высота 72px как в Telegram
   chatItem: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
+    minHeight: 72, // Фиксированная высота как в Telegram
   },
   
   // AVATAR SECTION
