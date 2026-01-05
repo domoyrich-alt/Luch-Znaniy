@@ -38,7 +38,7 @@ Props:
 interface TelegramChatHeaderProps {
   title: string;
   status?: string;
-  avatar: { backgroundColor: string; text: string };
+  avatar?: { backgroundColor: string; text: string };
   onBackPress: () => void;
   onAvatarPress?: () => void;
 }
