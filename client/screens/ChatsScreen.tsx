@@ -87,14 +87,14 @@ const TypingIndicator = ({ users }: { users: string[] }) => {
   }, []);
   return (
     <View style={styles.typingContainer}>
-      <View style={[styles.typingBubble, { backgroundColor: '#2A2A2A' }]}>
+      <View style={[styles.typingBubble, { backgroundColor: theme.chatBubbleIncoming || theme.backgroundSecondary }]}>
         <ThemedText style={[styles.typingText, { color: theme.textSecondary }]}>
           {users.join(', ')} {users.length === 1 ? 'печатает' : 'печатают'}
         </ThemedText>
         <Animated.View style={[styles.typingDots, { opacity: dotAnim }]}>
-          <View style={[styles.typingDot, { backgroundColor: '#8B5CF6' }]} />
-          <View style={[styles.typingDot, { backgroundColor: '#8B5CF6' }]} />
-          <View style={[styles.typingDot, { backgroundColor: '#8B5CF6' }]} />
+          <View style={[styles.typingDot, { backgroundColor: theme.primary }]} />
+          <View style={[styles.typingDot, { backgroundColor: theme.primary }]} />
+          <View style={[styles.typingDot, { backgroundColor: theme.primary }]} />
         </Animated.View>
       </View>
     </View>

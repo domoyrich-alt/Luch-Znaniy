@@ -213,7 +213,7 @@ export function TelegramMessageBubble({
                 {message.isOwn && (
                   <View style={styles.messageStatus}>
                     {message.isRead ? (
-                      <MaterialIcons name="done-all" size={16} color="#A855F7" />
+                      <MaterialIcons name="done-all" size={16} color={theme.primaryLight || '#A855F7'} />
                     ) : message.isDelivered ? (
                       <MaterialIcons name="done-all" size={16} color="rgba(255,255,255,0.5)" />
                     ) : (
