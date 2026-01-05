@@ -1,62 +1,62 @@
 /**
  * TELEGRAM DARK THEME
- * Темная тема в стиле Telegram с неоновыми акцентами
+ * Темная тема в стиле Telegram с фиолетовыми акцентами
  */
 
 // ======================
-// ОСНОВНЫЕ ЦВЕТА (Deep Navy + Slate Gray Premium Palette)
+// ОСНОВНЫЕ ЦВЕТА (Purple Telegram Palette)
 // ======================
 export const TelegramDarkColors = {
-  // Фоны - Deep Navy palette для премиум вида
-  background: '#0D1B2A',           // Главный фон чата - Deep Navy
-  backgroundSecondary: '#1B263B',  // Вторичный фон (левая панель) - Navy Blue
-  backgroundTertiary: '#2D3A4F',   // Третичный фон (карточки, поле ввода) - Slate Gray
-  surface: '#253142',              // Поверхность элементов
-  surfaceElevated: '#324156',      // Приподнятые элементы
+  // Фоны - темная тема как в Telegram
+  background: '#0E0E0E',           // Главный фон чата - очень темный
+  backgroundSecondary: '#1A1A1A',  // Вторичный фон (левая панель)
+  backgroundTertiary: '#252525',   // Третичный фон (карточки, поле ввода)
+  surface: '#2A2A2A',              // Поверхность элементов
+  surfaceElevated: '#303030',      // Приподнятые элементы
   
   // Границы и разделители
-  border: '#3D4F66',
-  separator: '#2D3A4F',
+  border: '#2A2A2A',
+  separator: '#252525',
   divider: 'rgba(255, 255, 255, 0.08)',
   
   // Текст - высокий контраст
-  textPrimary: '#FFFFFF',
-  textSecondary: '#8899A6',        // Dimmed gray для вторичного текста
-  textTertiary: '#657786',
-  textAccent: '#7AA2F7',
+  textPrimary: '#ECEDEE',
+  textSecondary: '#9BA1A6',        // Dimmed gray для вторичного текста
+  textTertiary: '#6B7280',
+  textAccent: '#8B5CF6',
   
-  // Акцентные цвета - глубокий синий с фиолетовым оттенком
-  primary: '#7AA2F7',              // Accent blue 
-  primaryLight: '#9DB5FF',
-  primaryDark: '#5A8AE6',
+  // Акцентные цвета - фиолетовые как в обновленном дизайне
+  primary: '#8B5CF6',              // Фиолетовый акцент
+  primaryLight: '#A855F7',
+  primaryDark: '#7C3AED',
   
   // Функциональные цвета
-  accent: '#7AA2F7',
-  success: '#73DACA',
-  warning: '#FF9E64',
-  error: '#F7768E',
-  info: '#7DCFFF',
-  online: '#9ECE6A',
+  accent: '#8B5CF6',
+  success: '#34D399',
+  warning: '#FBBF24',
+  error: '#F87171',
+  info: '#60A5FA',
+  online: '#22C55E',
   
-  // Сообщения - градиентный стиль
-  messageMine: '#2B5278',          // Мои сообщения - глубокий синий
-  messageMineGradientStart: '#3B6A94',
-  messageMineGradientEnd: '#2B5278',
-  messageTheirs: '#1B263B',        // Чужие сообщения - темный slate
+  // Сообщения - Telegram style
+  messageMine: '#8B5CF6',          // Мои сообщения - фиолетовый
+  messageMineGradientStart: '#8B5CF6',
+  messageMineGradientEnd: '#7C3AED',
+  messageTheirs: '#2A2A2A',        // Чужие сообщения - темно-серый
   messageText: '#FFFFFF',
   messageTime: 'rgba(255, 255, 255, 0.55)',
   
   // Overlay и эффекты
-  overlay: 'rgba(13, 27, 42, 0.85)',
-  ripple: 'rgba(122, 162, 247, 0.12)',
+  overlay: 'rgba(14, 14, 14, 0.85)',
+  ripple: 'rgba(139, 92, 246, 0.12)',
   shadow: 'rgba(0, 0, 0, 0.35)',
-  glow: 'rgba(122, 162, 247, 0.25)',  // Синее свечение
+  glow: 'rgba(139, 92, 246, 0.25)',  // Фиолетовое свечение
   
   // Дополнительные цвета для UI
-  inputBackground: '#1B263B',
-  inputBorder: '#3D4F66',
-  headerBackground: 'rgba(13, 27, 42, 0.92)',
-  tabBarBackground: 'rgba(27, 38, 59, 0.95)',
+  inputBackground: '#252525',
+  inputBorder: '#2A2A2A',
+  headerBackground: 'rgba(26, 26, 26, 0.92)',
+  tabBarBackground: 'rgba(26, 26, 26, 0.95)',
 };
 
 // ======================

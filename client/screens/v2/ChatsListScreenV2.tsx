@@ -86,7 +86,21 @@ function ChatsHeader({
 
   return (
     <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) }]}>
-      <ThemedText style={styles.headerTitle}>Чаты</ThemedText>
+      <Pressable 
+        style={styles.headerButton}
+        onPress={() => console.log('Edit mode')}
+      >
+        <ThemedText style={[styles.headerEditButton, { color: colors.primary }]}>
+          Edit
+        </ThemedText>
+      </Pressable>
+      
+      <View style={styles.headerCenter}>
+        <View style={styles.headerTitleContainer}>
+          <Feather name="folder" size={18} color={colors.textPrimary} style={{ marginRight: 6 }} />
+          <ThemedText style={styles.headerTitle}>Чаты</ThemedText>
+        </View>
+      </View>
       
       <View style={styles.headerRight}>
         <Pressable 
@@ -379,13 +393,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
+  headerEditButton: {
+    fontSize: 17,
+    fontWeight: '400',
+  },
+  headerCenter: {
+    flex: 2,
+    alignItems: 'center',
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   headerTitle: {
-    ...typography.titleLarge,
+    fontSize: 20,
+    fontWeight: '600',
     color: colors.textPrimary,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
+    flex: 1,
   },
   headerButton: {
     width: 40,
