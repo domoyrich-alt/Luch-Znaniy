@@ -27,15 +27,32 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/ThemedText';
+import { GradientAvatarPlaceholder } from '@/components/GradientAvatarPlaceholder';
 import { 
   TelegramDarkColors as colors, 
   TelegramSizes as sizes,
   TelegramAnimations as animations,
   TelegramTypography as typography,
 } from '@/constants/telegramDarkTheme';
+import { getApiUrl } from '@/lib/query-client';
+import { formatLastSeen, formatMessageTime } from '@/utils/chatUtils';
+
+// Хелпер для преобразования относительных URL в абсолютные
+const resolveAvatarUrl = (url?: string | null): string | null => {
+  if (!url) return null;
+  const trimmed = String(url).trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  try {
+    return new URL(trimmed, getApiUrl()).toString();
+  } catch {
+    return trimmed;
+  }
+};
 
 // ======================
 // ТИПЫ
@@ -54,6 +71,9 @@ export interface Chat {
   status?: string;
   lastMessageSenderId?: number;
   isLastMessageRead?: boolean;
+  lastSeenAt?: string | number | Date | null;
+  /** ID собеседника для открытия чата */
+  otherUserId?: number;
 }
 
 interface SwipeableChatItemProps {
@@ -243,24 +263,11 @@ const SwipeableChatItem = memo(function SwipeableChatItem({
     })
   ).current;
 
-  // Форматирование времени как в Telegram
-  const formatTime = (time?: string | Date): string => {
-    if (!time) return '';
-    const date = typeof time === 'string' ? new Date(time) : time;
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) {
-      return date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
-    } else if (diffDays === 1) {
-      return 'Вчера';
-    } else if (diffDays < 7) {
-      const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
-      return days[date.getDay()];
-    } else {
-      return date.toLocaleDateString('ru', { day: '2-digit', month: '2-digit' });
-    }
+  // Получаем статус пользователя
+  const getUserStatus = (): string => {
+    if (chat.lastMessage) return chat.lastMessage;
+    if (chat.status) return chat.status;
+    return formatLastSeen(chat.lastSeenAt, chat.isOnline);
   };
 
   return (
@@ -320,6 +327,13 @@ const SwipeableChatItem = memo(function SwipeableChatItem({
           ]}
           onPress={onPress}
         >
+          {/* Glassmorphism эффект */}
+          <View style={styles.glassContainer}>
+            <BlurView intensity={20} tint="dark" style={styles.glassBlur}>
+              <View style={styles.glassOverlay} />
+            </BlurView>
+          </View>
+          
           {/* Аватар */}
           <View style={styles.avatarContainer}>
             {chat.isBlocked ? (
@@ -328,15 +342,18 @@ const SwipeableChatItem = memo(function SwipeableChatItem({
                   {chat.name.charAt(0).toUpperCase()}
                 </ThemedText>
               </View>
-            ) : chat.avatar ? (
-              <Image source={{ uri: chat.avatar }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-                <ThemedText style={styles.avatarText}>
-                  {chat.name.charAt(0).toUpperCase()}
-                </ThemedText>
-              </View>
-            )}
+            ) : (() => {
+              const avatarUrl = resolveAvatarUrl(chat.avatar);
+              if (avatarUrl) {
+                return <Image source={{ uri: avatarUrl }} style={styles.avatar} />;
+              }
+              return (
+                <GradientAvatarPlaceholder
+                  name={chat.name}
+                  size={52}
+                />
+              );
+            })()}
             
             {/* Онлайн индикатор */}
             {chat.isOnline && !chat.isBlocked && (
@@ -365,17 +382,20 @@ const SwipeableChatItem = memo(function SwipeableChatItem({
                 </ThemedText>
               </View>
               <ThemedText style={styles.chatTime}>
-                {formatTime(chat.lastMessageTime)}
+                {formatMessageTime(chat.lastMessageTime)}
               </ThemedText>
             </View>
 
             {/* Нижняя строка: статус/сообщение + счетчик */}
             <View style={styles.chatFooter}>
               <ThemedText
-                style={styles.chatStatus}
+                style={[
+                  styles.chatStatus,
+                  chat.isOnline && styles.chatStatusOnline,
+                ]}
                 numberOfLines={1}
               >
-                {chat.lastMessage || chat.status || 'Нет статуса'}
+                {getUserStatus()}
               </ThemedText>
               
               {chat.unreadCount && chat.unreadCount > 0 ? (
@@ -468,7 +488,7 @@ export function ChatListWidget({
 }
 
 // ======================
-// СТИЛИ
+// СТИЛИ (High-fidelity Premium Design)
 // ======================
 const styles = StyleSheet.create({
   container: {
@@ -477,6 +497,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     flexGrow: 1,
+    paddingTop: 4,
   },
   
   // Swipe container
@@ -517,21 +538,38 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   
-  // Chat item
+  // Chat item - увеличенные отступы для "воздуха"
   chatItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: sizes.paddingL,
-    paddingVertical: sizes.paddingM,
+    paddingHorizontal: sizes.paddingL + 2,
+    paddingVertical: sizes.paddingM + 2,
     minHeight: sizes.chatItemHeight,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.divider,
+    position: 'relative',
+    overflow: 'hidden',
   },
   
-  // Avatar
+  // Glassmorphism - улучшенный эффект
+  glassContainer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  glassBlur: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  glassOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(27, 38, 59, 0.85)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  
+  // Avatar - увеличенный с gradient border
   avatarContainer: {
     position: 'relative',
-    marginRight: sizes.paddingM,
+    marginRight: sizes.paddingM + 2,
   },
   avatar: {
     width: sizes.avatarMedium,
@@ -539,25 +577,28 @@ const styles = StyleSheet.create({
     borderRadius: sizes.avatarMedium / 2,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   avatarText: {
     color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '600',
+    letterSpacing: -0.3,
   },
   onlineIndicator: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
+    bottom: 1,
+    right: 1,
     width: 14,
     height: 14,
     borderRadius: 7,
     backgroundColor: colors.online,
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: colors.backgroundSecondary,
   },
   
-  // Chat content
+  // Chat content - улучшенная типографика
   chatContent: {
     flex: 1,
     justifyContent: 'center',
@@ -566,26 +607,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 5,
   },
   nameContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginRight: sizes.paddingS,
+    marginRight: sizes.paddingM,
   },
   pinIcon: {
-    marginRight: 4,
+    marginRight: 5,
   },
   chatName: {
     ...typography.bodyLarge,
     color: colors.textPrimary,
-    fontWeight: '500',
+    fontWeight: '600',
+    fontSize: 16,
+    letterSpacing: -0.3,
     flex: 1,
   },
   chatTime: {
     ...typography.caption,
     color: colors.textSecondary,
+    fontSize: 12,
+    letterSpacing: 0.1,
   },
   chatFooter: {
     flexDirection: 'row',
@@ -596,23 +641,33 @@ const styles = StyleSheet.create({
     ...typography.bodyMedium,
     color: colors.textSecondary,
     flex: 1,
-    marginRight: sizes.paddingS,
+    marginRight: sizes.paddingM,
+    fontSize: 14,
+  },
+  chatStatusOnline: {
+    color: colors.online,
   },
   
-  // Unread badge
+  // Unread badge - premium style
   unreadBadge: {
     backgroundColor: colors.primary,
     borderRadius: sizes.radiusFull,
-    minWidth: 20,
-    height: 20,
+    minWidth: 22,
+    height: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   unreadText: {
     color: colors.textPrimary,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
 });
 

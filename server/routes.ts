@@ -8,7 +8,7 @@ import multer from "multer";
 import fs from "fs";
 import { setupWebSocket, notifyNewMessage, addUserToChat, isUserOnline, broadcastToChat } from "./websocket";
 import { createSession, refreshTokens, revokeSession, revokeAllUserSessions, authMiddleware, AuthRequest } from "./auth";
-import { sentGifts, giftTypes, users } from "@shared/schema";
+import { sentGifts, giftTypes, users, pushTokens } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 
 function detectRoleFromCode(code: string): string | null {
@@ -1233,19 +1233,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/user/:userId/profile", async (req: Request, res: Response) => {
     try {
       const { userId } = req.params;
-      const profile = await storage.getUserProfile(parseInt(userId));
+      let profile = await storage.getUserProfile(parseInt(userId));
       
       if (!profile) {
         // Создаём дефолтный профиль
         const user = await storage.getUser(parseInt(userId));
         if (!user) return res.status(404).json({ error: "Пользователь не найден" });
         
-        const newProfile = await storage.createOrUpdateUserProfile(parseInt(userId), {
+        profile = await storage.createOrUpdateUserProfile(parseInt(userId), {
           username: `user_${userId}`,
           bio: "",
           isOnline: true,
         });
-        return res.json(newProfile);
+      }
+      
+      // Если avatarUrl пустой, но есть фото в истории - используем последнее
+      if (!profile.avatarUrl) {
+        const photos = await storage.getUserProfilePhotos(parseInt(userId));
+        if (photos.length > 0) {
+          const latestPhoto = photos[0].photoUrl;
+          await storage.createOrUpdateUserProfile(parseInt(userId), { avatarUrl: latestPhoto });
+          profile = { ...profile, avatarUrl: latestPhoto };
+        }
       }
       
       res.json(profile);
@@ -1264,15 +1273,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const uid = parseInt(userId);
       const before = await storage.getUserProfile(uid);
 
-      const profile = await storage.createOrUpdateUserProfile(uid, {
-        username,
-        bio,
-        phoneNumber,
-        birthday,
-        favoriteMusic,
-        status,
-        avatarUrl,
-      });
+      // Фильтруем undefined значения, чтобы не перезаписывать существующие данные
+      const updateData: Record<string, any> = {};
+      if (username !== undefined) updateData.username = username;
+      if (bio !== undefined) updateData.bio = bio;
+      if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
+      if (birthday !== undefined) updateData.birthday = birthday;
+      if (favoriteMusic !== undefined) updateData.favoriteMusic = favoriteMusic;
+      if (status !== undefined) updateData.status = status;
+      if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
+
+      const profile = await storage.createOrUpdateUserProfile(uid, updateData);
 
       if (typeof avatarUrl === "string") {
         const trimmed = avatarUrl.trim();
@@ -1392,20 +1403,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/user/:userId/chats", async (req: Request, res: Response) => {
     try {
       const { userId } = req.params;
-      const chats = await storage.getPrivateChatsByUser(parseInt(userId));
+      const userIdNum = parseInt(userId);
+      const chats = await storage.getPrivateChatsByUser(userIdNum);
       
       // Получаем информацию о собеседниках и последнее сообщение
       const chatsWithUsers = await Promise.all(chats.map(async (chat) => {
-        const otherUserId = chat.user1Id === parseInt(userId) ? chat.user2Id : chat.user1Id;
+        const otherUserId = chat.user1Id === userIdNum ? chat.user2Id : chat.user1Id;
         const otherUser = await storage.getUser(otherUserId);
-        const otherProfile = await storage.getUserProfile(otherUserId);
+        let otherProfile = await storage.getUserProfile(otherUserId);
+        
+        // Если avatarUrl пустой, проверяем фото профиля
+        if (otherProfile && !otherProfile.avatarUrl) {
+          const photos = await storage.getUserProfilePhotos(otherUserId);
+          if (photos.length > 0) {
+            otherProfile = { ...otherProfile, avatarUrl: photos[0].photoUrl };
+          }
+        }
         
         // Получаем последнее сообщение (самое новое)
         const lastMessage = await storage.getLastPrivateChatMessage(chat.id);
         
+        // Получаем количество непрочитанных сообщений
+        const unreadCount = await storage.getUnreadMessageCount(chat.id, userIdNum);
+        
+        // Получаем настройки чата (pin/mute) для текущего пользователя
+        const settings = await storage.getChatSettings(chat.id, userIdNum);
+        
         return {
           ...chat,
           lastMessage,
+          unreadCount,
+          isPinned: settings.isPinned,
+          isMuted: settings.isMuted,
           otherUser: {
             id: otherUser?.id,
             firstName: otherUser?.firstName,
@@ -1415,8 +1444,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       }));
       
-      // Сортируем по дате последнего сообщения
+      // Сортируем: сначала закреплённые, потом по дате последнего сообщения
       chatsWithUsers.sort((a, b) => {
+        // Pinned chats first
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        
+        // Then by last message time
         const aTime = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0;
         const bTime = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : 0;
         return bTime - aTime;
@@ -1441,7 +1475,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         parseInt(offset as string)
       );
       
-      res.json(messages);
+      // Include reactions and reply info for each message
+      const messagesWithDetails = await Promise.all(messages.map(async (msg) => {
+        const reactions = await storage.getMessageReactionsGrouped(msg.id);
+        let replyTo = null;
+        if (msg.replyToId) {
+          replyTo = await storage.getPrivateMessage(msg.replyToId);
+        }
+        return {
+          ...msg,
+          reactions,
+          replyTo
+        };
+      }));
+      
+      res.json(messagesWithDetails);
     } catch (error) {
       console.error("Get messages error:", error);
       res.status(500).json({ error: "Ошибка сервера" });
@@ -1453,6 +1501,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { chatId } = req.params;
       const { senderId, message, mediaType, mediaUrl, mediaFileName, mediaSize, localId, senderName } = req.body;
+      
+      console.log(`[DEBUG] Sending message to chat ${chatId}:`, { senderId, message: message?.substring(0, 50), mediaType, mediaUrl });
       
       if (!senderId || (!message && !mediaUrl)) {
         return res.status(400).json({ error: "senderId и message/mediaUrl обязательны" });
@@ -1534,6 +1584,286 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Delete message error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // ========== MESSAGE REACTIONS ==========
+  
+  // Add reaction to message
+  app.post("/api/messages/:messageId/reactions", async (req: Request, res: Response) => {
+    try {
+      const { messageId } = req.params;
+      const { userId, emoji } = req.body;
+      
+      if (!userId || !emoji) {
+        return res.status(400).json({ error: "userId и emoji обязательны" });
+      }
+      
+      const reaction = await storage.addMessageReaction(parseInt(messageId), parseInt(userId), emoji);
+      
+      // Get the message to find chatId for WebSocket broadcast
+      const message = await storage.getPrivateMessage(parseInt(messageId));
+      if (message) {
+        broadcastToChat(message.chatId.toString(), {
+          type: 'message_reaction',
+          payload: {
+            messageId: parseInt(messageId),
+            chatId: message.chatId,
+            userId: parseInt(userId),
+            emoji,
+            action: 'add'
+          },
+          timestamp: Date.now()
+        });
+      }
+      
+      res.json(reaction);
+    } catch (error) {
+      console.error("Add reaction error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // Remove reaction from message
+  app.delete("/api/messages/:messageId/reactions", async (req: Request, res: Response) => {
+    try {
+      const { messageId } = req.params;
+      const { userId } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({ error: "userId обязателен" });
+      }
+      
+      await storage.removeMessageReaction(parseInt(messageId), parseInt(userId));
+      
+      const message = await storage.getPrivateMessage(parseInt(messageId));
+      if (message) {
+        broadcastToChat(message.chatId.toString(), {
+          type: 'message_reaction',
+          payload: {
+            messageId: parseInt(messageId),
+            chatId: message.chatId,
+            userId: parseInt(userId),
+            action: 'remove'
+          },
+          timestamp: Date.now()
+        });
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Remove reaction error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // Get reactions for message
+  app.get("/api/messages/:messageId/reactions", async (req: Request, res: Response) => {
+    try {
+      const { messageId } = req.params;
+      const reactions = await storage.getMessageReactionsGrouped(parseInt(messageId));
+      res.json(reactions);
+    } catch (error) {
+      console.error("Get reactions error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // ========== MESSAGE EDITING ==========
+  
+  // Edit message
+  app.patch("/api/messages/:messageId", async (req: Request, res: Response) => {
+    try {
+      const { messageId } = req.params;
+      const { userId, message } = req.body;
+      
+      if (!userId || !message) {
+        return res.status(400).json({ error: "userId и message обязательны" });
+      }
+      
+      const updated = await storage.editPrivateMessage(parseInt(messageId), parseInt(userId), message);
+      
+      if (!updated) {
+        return res.status(403).json({ error: "Невозможно редактировать это сообщение" });
+      }
+      
+      // Broadcast edit to chat
+      broadcastToChat(updated.chatId.toString(), {
+        type: 'message_edited',
+        payload: {
+          messageId: parseInt(messageId),
+          chatId: updated.chatId,
+          newMessage: message,
+          editedAt: updated.editedAt
+        },
+        timestamp: Date.now()
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Edit message error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // ========== BLOCKED USERS ==========
+  
+  // Block user
+  app.post("/api/users/:userId/block", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const { blockedUserId } = req.body;
+      
+      if (!blockedUserId) {
+        return res.status(400).json({ error: "blockedUserId обязателен" });
+      }
+      
+      const blocked = await storage.blockUser(parseInt(userId), parseInt(blockedUserId));
+      res.json(blocked);
+    } catch (error) {
+      console.error("Block user error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // Unblock user
+  app.delete("/api/users/:userId/block/:blockedUserId", async (req: Request, res: Response) => {
+    try {
+      const { userId, blockedUserId } = req.params;
+      await storage.unblockUser(parseInt(userId), parseInt(blockedUserId));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Unblock user error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // Get blocked users
+  app.get("/api/users/:userId/blocked", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const blocked = await storage.getBlockedUsers(parseInt(userId));
+      
+      // Get user details for each blocked user
+      const blockedWithDetails = await Promise.all(blocked.map(async (b) => {
+        const user = await storage.getUser(b.blockedUserId);
+        const profile = await storage.getUserProfile(b.blockedUserId);
+        return {
+          ...b,
+          user: {
+            id: user?.id,
+            firstName: user?.firstName,
+            lastName: user?.lastName,
+            ...profile
+          }
+        };
+      }));
+      
+      res.json(blockedWithDetails);
+    } catch (error) {
+      console.error("Get blocked users error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // Check if user is blocked
+  app.get("/api/users/:userId/blocked/:targetUserId", async (req: Request, res: Response) => {
+    try {
+      const { userId, targetUserId } = req.params;
+      const isBlocked = await storage.isUserBlocked(parseInt(userId), parseInt(targetUserId));
+      res.json({ isBlocked });
+    } catch (error) {
+      console.error("Check blocked error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // ========== CHAT SETTINGS (PIN/MUTE) ==========
+  
+  // Pin/unpin chat
+  app.post("/api/chats/:chatId/pin", async (req: Request, res: Response) => {
+    try {
+      const { chatId } = req.params;
+      const { userId, isPinned } = req.body;
+      
+      if (userId === undefined || isPinned === undefined) {
+        return res.status(400).json({ error: "userId и isPinned обязательны" });
+      }
+      
+      const updated = await storage.pinChat(parseInt(chatId), parseInt(userId), isPinned);
+      res.json(updated);
+    } catch (error) {
+      console.error("Pin chat error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // Mute/unmute chat
+  app.post("/api/chats/:chatId/mute", async (req: Request, res: Response) => {
+    try {
+      const { chatId } = req.params;
+      const { userId, isMuted } = req.body;
+      
+      if (userId === undefined || isMuted === undefined) {
+        return res.status(400).json({ error: "userId и isMuted обязательны" });
+      }
+      
+      const updated = await storage.muteChat(parseInt(chatId), parseInt(userId), isMuted);
+      res.json(updated);
+    } catch (error) {
+      console.error("Mute chat error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // Get chat settings
+  app.get("/api/chats/:chatId/settings/:userId", async (req: Request, res: Response) => {
+    try {
+      const { chatId, userId } = req.params;
+      const settings = await storage.getChatSettings(parseInt(chatId), parseInt(userId));
+      res.json(settings);
+    } catch (error) {
+      console.error("Get chat settings error:", error);
+      res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // Send message with reply
+  app.post("/api/chats/:chatId/messages/reply", async (req: Request, res: Response) => {
+    try {
+      const { chatId } = req.params;
+      const { senderId, message, mediaType, mediaUrl, mediaFileName, mediaSize, replyToId, localId, senderName } = req.body;
+      
+      if (!senderId || (!message && !mediaUrl)) {
+        return res.status(400).json({ error: "senderId и message/mediaUrl обязательны" });
+      }
+      
+      const newMessage = await storage.sendPrivateMessageWithReply(parseInt(chatId), senderId, {
+        message,
+        mediaType,
+        mediaUrl,
+        mediaFileName,
+        mediaSize,
+      } as any, replyToId);
+      
+      // Get reply message details if exists
+      let replyTo = null;
+      if (replyToId) {
+        replyTo = await storage.getPrivateMessage(replyToId);
+      }
+      
+      // Notify via WebSocket
+      notifyNewMessage(chatId, senderId, {
+        ...newMessage,
+        localId,
+        senderName,
+        replyTo
+      });
+      
+      res.json({ ...newMessage, replyTo });
+    } catch (error) {
+      console.error("Send reply message error:", error);
       res.status(500).json({ error: "Ошибка сервера" });
     }
   });
@@ -1633,6 +1963,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get friends count error:", error);
       res.status(500).json({ error: "Ошибка сервера" });
+    }
+  });
+
+  // ========== PUSH TOKENS (NOTIFICATIONS) ==========
+
+  // Регистрация/обновление push токена
+  app.post("/api/push-token", async (req: Request, res: Response) => {
+    try {
+      const { userId, token, platform, deviceType } = req.body;
+      
+      if (!userId || !token || !platform) {
+        return res.status(400).json({ error: "userId, token и platform обязательны" });
+      }
+
+      // Проверяем, есть ли уже такой токен у этого пользователя
+      const existing = await db.select().from(pushTokens)
+        .where(eq(pushTokens.userId, userId))
+        .limit(1);
+
+      if (existing.length > 0) {
+        // Обновляем существующий
+        await db.update(pushTokens)
+          .set({ 
+            token, 
+            platform, 
+            deviceType: deviceType || null,
+            isActive: true,
+            updatedAt: new Date()
+          })
+          .where(eq(pushTokens.userId, userId));
+      } else {
+        // Создаем новый
+        await db.insert(pushTokens).values({
+          userId,
+          token,
+          platform,
+          deviceType: deviceType || null,
+          isActive: true,
+        });
+      }
+
+      res.json({ success: true, message: "Push token сохранён" });
+    } catch (error) {
+      console.error("Save push token error:", error);
+      res.status(500).json({ error: "Ошибка сохранения токена" });
+    }
+  });
+
+  // Деактивировать push токен (logout)
+  app.delete("/api/push-token/:userId", async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      await db.update(pushTokens)
+        .set({ isActive: false })
+        .where(eq(pushTokens.userId, userId));
+
+      res.json({ success: true, message: "Push token деактивирован" });
+    } catch (error) {
+      console.error("Deactivate push token error:", error);
+      res.status(500).json({ error: "Ошибка деактивации токена" });
+    }
+  });
+
+  // Получить все активные токены для пользователя (для отладки)
+  app.get("/api/push-token/:userId", async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      const tokens = await db.select().from(pushTokens)
+        .where(eq(pushTokens.userId, userId));
+
+      res.json(tokens);
+    } catch (error) {
+      console.error("Get push tokens error:", error);
+      res.status(500).json({ error: "Ошибка получения токенов" });
     }
   });
 

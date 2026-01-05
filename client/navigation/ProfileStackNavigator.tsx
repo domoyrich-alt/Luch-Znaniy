@@ -11,6 +11,7 @@ import TeacherJournalScreen from "@/screens/TeacherJournalScreen";
 import GradesScreen from "@/screens/GradesScreen";
 import ClassListScreen from "@/screens/ClassListScreen";
 import MyGiftsScreen from "@/screens/MyGiftsScreen";
+import UserProfileScreen from "@/screens/UserProfileScreen";
 import { useTheme } from "@/hooks/useTheme";
 
 export type ProfileStackParamList = {
@@ -25,6 +26,13 @@ export type ProfileStackParamList = {
   Grades: undefined;
   ClassList: undefined;
   MyGifts: undefined;
+  UserProfile: {
+    userId: number;
+    firstName: string;
+    lastName: string;
+    username: string;
+    avgGrade?: number;
+  };
 };
 
 const Stack = createStackNavigator<ProfileStackParamList>();
@@ -112,6 +120,13 @@ export default function ProfileStackNavigator() {
       <Stack.Screen
         name="MyGifts"
         component={MyGiftsScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="UserProfile"
+        component={UserProfileScreen}
         options={{
           headerShown: false,
         }}

@@ -14,8 +14,14 @@ interface SettingsContextType {
   settings: UserSettings;
   isLoading: boolean;
   
+  /** Версия профиля - инкрементируется при каждом обновлении для инвалидации кэша */
+  profileVersion: number;
+  
   // Профиль
   updateProfileSettings: (updates: Partial<UserSettings['profile']>) => Promise<void>;
+  
+  /** Принудительно инвалидировать кэш профиля (инкрементирует profileVersion) */
+  invalidateProfileCache: () => void;
   
   // Приватность
   updatePrivacySettings: (updates: Partial<UserSettings['privacy']>) => Promise<void>;
@@ -44,6 +50,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileVersion, setProfileVersion] = useState(0);
 
   // Загружаем настройки при старте и при смене пользователя
   useEffect(() => {
@@ -108,6 +115,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       profile: { ...settings.profile, ...updates },
     };
     await saveSettings(newSettings);
+    // Инкрементируем версию профиля для инвалидации кэша во всех компонентах
+    setProfileVersion(v => v + 1);
+  };
+
+  const invalidateProfileCache = () => {
+    setProfileVersion(v => v + 1);
   };
 
   const updatePrivacySettings = async (updates: Partial<UserSettings['privacy']>) => {
@@ -176,7 +189,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       value={{
         settings,
         isLoading,
+        profileVersion,
         updateProfileSettings,
+        invalidateProfileCache,
         updatePrivacySettings,
         updateNotificationSettings,
         updateAppearanceSettings,

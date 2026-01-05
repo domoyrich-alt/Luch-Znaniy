@@ -33,6 +33,7 @@ import Animated, {
 import { BlurView } from "expo-blur";
 
 import { ThemedText } from "@/components/ThemedText";
+import { GradientAvatarPlaceholder } from "@/components/GradientAvatarPlaceholder";
 import { useAuth } from "@/context/AuthContext";
 import { useStars } from "@/context/StarsContext";
 import { apiDelete, apiGet, apiPost } from "@/lib/api";
@@ -44,20 +45,20 @@ const HEADER_MIN_HEIGHT = 100;
 const AVATAR_MAX_SIZE = 120;
 const AVATAR_MIN_SIZE = 50;
 
-// НЕОНОВЫЕ ЦВЕТА
+// НЕОНОВЫЕ ЦВЕТА - Deep Navy Premium palette
 const NEON = {
-  primary: '#8B5CF6',
-  secondary: '#4ECDC4',
-  accent: '#FF6B9D',
-  warning: '#FFD93D',
-  success: '#6BCB77',
-  error: '#FF6B6B',
-  bgDark: '#0A0A0F',
-  bgCard: '#141420',
-  bgSecondary: '#1A1A2E',
+  primary: '#7AA2F7',
+  secondary: '#73DACA',
+  accent: '#FF79C6',
+  warning: '#FF9E64',
+  success: '#9ECE6A',
+  error: '#F7768E',
+  bgDark: '#0D1B2A',
+  bgCard: '#1B263B',
+  bgSecondary: '#253142',
   textPrimary: '#FFFFFF',
-  textSecondary: '#A0A0B0',
-  glow: 'rgba(139, 92, 246, 0.5)',
+  textSecondary: '#8899A6',
+  glow: 'rgba(122, 162, 247, 0.35)',
 };
 
 type UserProfileParams = {
@@ -401,6 +402,8 @@ export default function UserProfileScreen() {
         const profile = await apiGet<RemoteUserProfile>(`/api/user/${userId}/profile`);
         const photos = await apiGet<UserProfilePhoto[]>(`/api/user/${userId}/profile/photos`);
         if (cancelled) return;
+        console.log('[UserProfileScreen] Loaded profile:', profile);
+        console.log('[UserProfileScreen] avatarUrl:', profile?.avatarUrl);
         setRemoteProfile(profile || null);
         setProfilePhotos(Array.isArray(photos) ? photos : []);
       } finally {
@@ -688,9 +691,12 @@ export default function UserProfileScreen() {
                 {avatarUri ? (
                   <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
                 ) : (
-                  <ThemedText style={styles.avatarText}>
-                    {firstName.charAt(0)}{lastName.charAt(0)}
-                  </ThemedText>
+                  <GradientAvatarPlaceholder
+                    firstName={firstName}
+                    lastName={lastName}
+                    username={normalizedUsername}
+                    size={AVATAR_MAX_SIZE - 8}
+                  />
                 )}
               </View>
             </LinearGradient>

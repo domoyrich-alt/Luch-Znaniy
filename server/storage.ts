@@ -7,6 +7,7 @@ import {
   userProfiles, privateChats, privateMessages, friendships, giftTypes, sentGifts,
   achievementTypes, achievementProgress, parentChildren,
   userProfilePhotos, userSessions, userStars, starTransactions,
+  messageReactions, blockedUsers,
   type User, type InsertUser,
   type Class, type InsertClass,
   type InviteCode, type InsertInviteCode,
@@ -28,6 +29,8 @@ import {
   type UserProfilePhoto, type InsertUserProfilePhoto,
   type PrivateChat, type InsertPrivateChat,
   type PrivateMessage, type InsertPrivateMessage,
+  type MessageReaction, type InsertMessageReaction,
+  type BlockedUser, type InsertBlockedUser,
   type Friendship, type InsertFriendship,
   type GiftType, type InsertGiftType,
   type SentGift, type InsertSentGift,
@@ -723,6 +726,17 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(privateChats)
       .where(sql`${privateChats.user1Id} = ${userId} OR ${privateChats.user2Id} = ${userId}`)
       .orderBy(sql`${privateChats.lastMessageAt} DESC NULLS LAST`);
+  }
+
+  async getUnreadMessageCount(chatId: number, userId: number): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)` })
+      .from(privateMessages)
+      .where(and(
+        eq(privateMessages.chatId, chatId),
+        sql`${privateMessages.senderId} != ${userId}`,
+        eq(privateMessages.isRead, false)
+      ));
+    return Number(result[0]?.count || 0);
   }
 
   async getPrivateChatMessages(chatId: number, limit: number = 50, offset: number = 0): Promise<PrivateMessage[]> {
@@ -1452,6 +1466,220 @@ export class DatabaseStorage implements IStorage {
       .where(eq(starTransactions.userId, userId))
       .orderBy(desc(starTransactions.createdAt))
       .limit(limit);
+  }
+
+  // ============ MESSAGE REACTIONS ============
+  async addMessageReaction(messageId: number, userId: number, emoji: string): Promise<MessageReaction> {
+    // Remove existing reaction from this user on this message first
+    await db.delete(messageReactions)
+      .where(and(
+        eq(messageReactions.messageId, messageId),
+        eq(messageReactions.userId, userId)
+      ));
+    
+    const [reaction] = await db.insert(messageReactions)
+      .values({ messageId, userId, emoji } as InsertMessageReaction)
+      .returning();
+    return reaction;
+  }
+
+  async removeMessageReaction(messageId: number, userId: number): Promise<void> {
+    await db.delete(messageReactions)
+      .where(and(
+        eq(messageReactions.messageId, messageId),
+        eq(messageReactions.userId, userId)
+      ));
+  }
+
+  async getMessageReactions(messageId: number): Promise<MessageReaction[]> {
+    return db.select().from(messageReactions)
+      .where(eq(messageReactions.messageId, messageId));
+  }
+
+  async getMessageReactionsGrouped(messageId: number): Promise<{ emoji: string; count: number; users: number[] }[]> {
+    const reactions = await this.getMessageReactions(messageId);
+    const grouped = new Map<string, { emoji: string; count: number; users: number[] }>();
+    
+    for (const r of reactions) {
+      if (!grouped.has(r.emoji)) {
+        grouped.set(r.emoji, { emoji: r.emoji, count: 0, users: [] });
+      }
+      const g = grouped.get(r.emoji)!;
+      g.count++;
+      g.users.push(r.userId);
+    }
+    
+    return Array.from(grouped.values());
+  }
+
+  // ============ BLOCKED USERS ============
+  async blockUser(userId: number, blockedUserId: number): Promise<BlockedUser> {
+    const existing = await db.select().from(blockedUsers)
+      .where(and(
+        eq(blockedUsers.userId, userId),
+        eq(blockedUsers.blockedUserId, blockedUserId)
+      ))
+      .limit(1);
+    
+    if (existing.length > 0) {
+      return existing[0];
+    }
+    
+    const [blocked] = await db.insert(blockedUsers)
+      .values({ userId, blockedUserId } as InsertBlockedUser)
+      .returning();
+    return blocked;
+  }
+
+  async unblockUser(userId: number, blockedUserId: number): Promise<void> {
+    await db.delete(blockedUsers)
+      .where(and(
+        eq(blockedUsers.userId, userId),
+        eq(blockedUsers.blockedUserId, blockedUserId)
+      ));
+  }
+
+  async getBlockedUsers(userId: number): Promise<BlockedUser[]> {
+    return db.select().from(blockedUsers)
+      .where(eq(blockedUsers.userId, userId));
+  }
+
+  async isUserBlocked(userId: number, blockedUserId: number): Promise<boolean> {
+    const result = await db.select().from(blockedUsers)
+      .where(and(
+        eq(blockedUsers.userId, userId),
+        eq(blockedUsers.blockedUserId, blockedUserId)
+      ))
+      .limit(1);
+    return result.length > 0;
+  }
+
+  // ============ MESSAGE EDITING ============
+  async editPrivateMessage(messageId: number, userId: number, newText: string): Promise<PrivateMessage | null> {
+    const [message] = await db.select().from(privateMessages)
+      .where(eq(privateMessages.id, messageId))
+      .limit(1);
+    
+    if (!message || message.senderId !== userId) {
+      return null;
+    }
+    
+    const [updated] = await db.update(privateMessages)
+      .set({ 
+        message: newText, 
+        isEdited: true, 
+        editedAt: new Date() 
+      })
+      .where(eq(privateMessages.id, messageId))
+      .returning();
+    
+    return updated;
+  }
+
+  async softDeletePrivateMessage(messageId: number, userId: number, forAll: boolean): Promise<{ success: boolean; message?: PrivateMessage }> {
+    const [message] = await db.select().from(privateMessages)
+      .where(eq(privateMessages.id, messageId))
+      .limit(1);
+    
+    if (!message) {
+      return { success: false };
+    }
+    
+    // Only sender can delete for all
+    if (forAll && message.senderId !== userId) {
+      return { success: false };
+    }
+    
+    const [updated] = await db.update(privateMessages)
+      .set({ 
+        isDeleted: true, 
+        deletedAt: new Date(),
+        deletedForAll: forAll
+      })
+      .where(eq(privateMessages.id, messageId))
+      .returning();
+    
+    return { success: true, message: updated };
+  }
+
+  // ============ CHAT PIN & MUTE ============
+  async pinChat(chatId: number, userId: number, isPinned: boolean): Promise<PrivateChat | null> {
+    const [chat] = await db.select().from(privateChats)
+      .where(eq(privateChats.id, chatId))
+      .limit(1);
+    
+    if (!chat) return null;
+    
+    const updateField = chat.user1Id === userId ? 'isPinned1' : 'isPinned2';
+    const [updated] = await db.update(privateChats)
+      .set({ [updateField]: isPinned } as any)
+      .where(eq(privateChats.id, chatId))
+      .returning();
+    
+    return updated;
+  }
+
+  async muteChat(chatId: number, userId: number, isMuted: boolean): Promise<PrivateChat | null> {
+    const [chat] = await db.select().from(privateChats)
+      .where(eq(privateChats.id, chatId))
+      .limit(1);
+    
+    if (!chat) return null;
+    
+    const updateField = chat.user1Id === userId ? 'isMuted1' : 'isMuted2';
+    const [updated] = await db.update(privateChats)
+      .set({ [updateField]: isMuted } as any)
+      .where(eq(privateChats.id, chatId))
+      .returning();
+    
+    return updated;
+  }
+
+  async getChatSettings(chatId: number, userId: number): Promise<{ isPinned: boolean; isMuted: boolean }> {
+    const [chat] = await db.select().from(privateChats)
+      .where(eq(privateChats.id, chatId))
+      .limit(1);
+    
+    if (!chat) {
+      return { isPinned: false, isMuted: false };
+    }
+    
+    const isPinned = chat.user1Id === userId ? (chat.isPinned1 ?? false) : (chat.isPinned2 ?? false);
+    const isMuted = chat.user1Id === userId ? (chat.isMuted1 ?? false) : (chat.isMuted2 ?? false);
+    
+    return { isPinned, isMuted };
+  }
+
+  // ============ REPLY TO MESSAGE ============
+  async sendPrivateMessageWithReply(chatId: number, senderId: number, message: InsertPrivateMessage, replyToId?: number): Promise<PrivateMessage> {
+    const { chatId: _chatId, senderId: _senderId, ...rest } = message as any;
+    const [newMessage] = await db.insert(privateMessages)
+      .values({ ...rest, chatId, senderId, replyToId } as any)
+      .returning();
+    
+    await db.update(privateChats)
+      .set({ lastMessageAt: new Date() })
+      .where(eq(privateChats.id, chatId));
+    
+    return newMessage;
+  }
+
+  async getPrivateMessageWithReply(messageId: number): Promise<{ message: PrivateMessage; replyTo: PrivateMessage | null } | null> {
+    const [message] = await db.select().from(privateMessages)
+      .where(eq(privateMessages.id, messageId))
+      .limit(1);
+    
+    if (!message) return null;
+    
+    let replyTo: PrivateMessage | null = null;
+    if (message.replyToId) {
+      const [reply] = await db.select().from(privateMessages)
+        .where(eq(privateMessages.id, message.replyToId))
+        .limit(1);
+      replyTo = reply || null;
+    }
+    
+    return { message, replyTo };
   }
 }
 

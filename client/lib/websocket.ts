@@ -16,6 +16,8 @@ export type WSMessageType =
   | 'message_delivered'
   | 'message_read'
   | 'message_deleted'
+  | 'message_edited'
+  | 'message_reaction'
   | 'typing'
   | 'stop_typing'
   | 'online'

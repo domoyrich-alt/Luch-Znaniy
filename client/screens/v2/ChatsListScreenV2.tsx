@@ -16,6 +16,7 @@ import {
   Alert,
   StatusBar,
   TextInput,
+  Platform,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +26,7 @@ import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/ThemedText';
 import { useAuth } from '@/context/AuthContext';
 import ChatService, { PrivateChat } from '@/services/ChatService';
+import { wsClient } from '@/lib/websocket';
 
 import {
   ChatListWidget,
@@ -127,23 +129,53 @@ export default function ChatsListScreenV2() {
       
       const userChats = await ChatService.getUserChats(user.id);
       
+      console.log('[ChatsListScreenV2] Raw chats from server:', userChats.map((c: any) => ({
+        id: c.id,
+        otherUserAvatarUrl: c.otherUser?.avatarUrl,
+        otherUserName: c.otherUser?.firstName,
+      })));
+      
       // Преобразуем в формат Chat
-      const formattedChats: Chat[] = userChats.map(chat => ({
-        id: chat.id,
-        name: chat.otherUser?.firstName 
-          ? `${chat.otherUser.firstName}${chat.otherUser.lastName ? ` ${chat.otherUser.lastName}` : ''}`
-          : chat.otherUser?.username 
-            ? `@${chat.otherUser.username}`
-            : 'Пользователь',
-        avatar: chat.otherUser?.avatarUrl,
-        lastMessage: undefined, // Последнее сообщение нужно загружать отдельно
-        lastMessageTime: chat.lastMessageAt || undefined,
-        unreadCount: 0, // TODO: добавить в API
-        isOnline: chat.otherUser?.isOnline || false,
-        isPinned: false, // TODO: добавить в API
-        isMuted: false,  // TODO: добавить в API
-        status: chat.otherUser?.status || chat.otherUser?.bio,
-      }));
+      const formattedChats: Chat[] = userChats.map((chat: any) => {
+        // Определяем ID собеседника
+        const otherUserId = chat.user1Id === user?.id ? chat.user2Id : chat.user1Id;
+        
+        // Получаем текст последнего сообщения
+        let lastMessageText = '';
+        if (chat.lastMessage) {
+          if (chat.lastMessage.message) {
+            lastMessageText = chat.lastMessage.message;
+          } else if (chat.lastMessage.mediaType) {
+            const mediaLabels: Record<string, string> = {
+              'photo': '📷 Фото',
+              'video': '📹 Видео',
+              'video_circle': '🔵 Видеосообщение',
+              'audio': '🎵 Аудио',
+              'document': '📎 Файл',
+            };
+            lastMessageText = mediaLabels[chat.lastMessage.mediaType] || '📎 Вложение';
+          }
+        }
+        
+        return {
+          id: chat.id,
+          name: chat.otherUser?.firstName 
+            ? `${chat.otherUser.firstName}${chat.otherUser.lastName ? ` ${chat.otherUser.lastName}` : ''}`
+            : chat.otherUser?.username 
+              ? `@${chat.otherUser.username}`
+              : 'Пользователь',
+          avatar: chat.otherUser?.avatarUrl || null,
+          lastMessage: lastMessageText || undefined,
+          lastMessageTime: chat.lastMessage?.createdAt || chat.lastMessageAt || undefined,
+          unreadCount: chat.unreadCount || 0,
+          isOnline: chat.otherUser?.isOnline || false,
+          isPinned: chat.isPinned || false,
+          isMuted: chat.isMuted || false,
+          status: chat.otherUser?.status || chat.otherUser?.bio,
+          lastSeenAt: chat.otherUser?.lastSeenAt,
+          otherUserId,
+        };
+      });
       
       setChats(formattedChats);
     } catch (error) {
@@ -162,6 +194,31 @@ export default function ChatsListScreenV2() {
     }, [loadChats])
   );
 
+  // WebSocket подписка на новые сообщения
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Подключаем WebSocket
+    wsClient.connect(user.id, []);
+
+    // Обработчик новых сообщений - обновляем список чатов
+    const handleNewMessage = () => {
+      // Перезагружаем список чатов при получении нового сообщения
+      loadChats();
+      
+      // Haptic feedback
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    };
+
+    wsClient.on('message', handleNewMessage);
+
+    return () => {
+      wsClient.off('message', handleNewMessage);
+    };
+  }, [user?.id, loadChats]);
+
   // Обновление
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
@@ -178,17 +235,14 @@ export default function ChatsListScreenV2() {
 
   // Открытие чата
   const handleChatPress = useCallback((chat: Chat) => {
-    // Находим оригинальный чат для получения otherUserId
-    const originalChat = chats.find(c => c.id === chat.id);
-    
     (navigation.navigate as any)('ChatNew', {
       chatId: chat.id,
-      otherUserId: originalChat?.id, // TODO: нужно хранить otherUserId
+      otherUserId: chat.otherUserId,
       otherUserName: chat.name,
       otherUserAvatar: chat.avatar,
       isOnline: chat.isOnline,
     });
-  }, [navigation, chats]);
+  }, [navigation]);
 
   // Удаление чата
   const handleDeleteChat = useCallback((chatId: number) => {
@@ -210,14 +264,64 @@ export default function ChatsListScreenV2() {
   }, []);
 
   // Закрепление чата
-  const handlePinChat = useCallback((chatId: number) => {
-    setChats(prev => prev.map(chat => 
-      chat.id === chatId 
-        ? { ...chat, isPinned: !chat.isPinned }
-        : chat
+  const handlePinChat = useCallback(async (chatId: number) => {
+    const chat = chats.find(c => c.id === chatId);
+    const newPinState = !chat?.isPinned;
+    
+    // Optimistic update
+    setChats(prev => prev.map(c => 
+      c.id === chatId 
+        ? { ...c, isPinned: newPinState }
+        : c
     ));
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, []);
+    
+    try {
+      await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/chats/${chatId}/pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id, isPinned: newPinState }),
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      // Revert on error
+      setChats(prev => prev.map(c => 
+        c.id === chatId 
+          ? { ...c, isPinned: !newPinState }
+          : c
+      ));
+      console.error('Failed to pin chat:', error);
+    }
+  }, [chats, user?.id]);
+
+  // Отключение уведомлений чата
+  const handleMuteChat = useCallback(async (chatId: number) => {
+    const chat = chats.find(c => c.id === chatId);
+    const newMuteState = !chat?.isMuted;
+    
+    // Optimistic update
+    setChats(prev => prev.map(c => 
+      c.id === chatId 
+        ? { ...c, isMuted: newMuteState }
+        : c
+    ));
+    
+    try {
+      await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/chats/${chatId}/mute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id, isMuted: newMuteState }),
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      // Revert on error
+      setChats(prev => prev.map(c => 
+        c.id === chatId 
+          ? { ...c, isMuted: !newMuteState }
+          : c
+      ));
+      console.error('Failed to mute chat:', error);
+    }
+  }, [chats, user?.id]);
 
   // Новый чат
   const handleNewChat = useCallback(() => {
@@ -247,6 +351,7 @@ export default function ChatsListScreenV2() {
         onChatPress={handleChatPress}
         onDeleteChat={handleDeleteChat}
         onPinChat={handlePinChat}
+        onMuteChat={handleMuteChat}
         onRefresh={handleRefresh}
         refreshing={refreshing}
       />

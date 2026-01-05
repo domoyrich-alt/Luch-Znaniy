@@ -14,6 +14,7 @@ import {
   PanResponder,
   GestureResponderEvent,
   PanResponderGestureState,
+  Image,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useFocusEffect } from "@react-navigation/native";
@@ -24,9 +25,11 @@ import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
+import { GradientAvatarPlaceholder } from "@/components/GradientAvatarPlaceholder";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
 import ChatService, { PrivateChat } from "@/services/ChatService";
+import { getApiUrl } from "@/lib/query-client";
 
 // Константы для свайпа (улучшенные как в Qt)
 const SWIPE_THRESHOLD = 60;           // Порог для срабатывания действия
@@ -301,6 +304,19 @@ const swipeStyles = StyleSheet.create({
   },
 });
 
+// Хелпер для преобразования относительных URL в абсолютные
+const resolveAvatarUrl = (url?: string | null): string | null => {
+  if (!url) return null;
+  const trimmed = String(url).trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  try {
+    return new URL(trimmed, getApiUrl()).toString();
+  } catch {
+    return trimmed;
+  }
+};
+
 export default function ChatsListScreen() {
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
@@ -421,16 +437,25 @@ export default function ChatsListScreen() {
         >
           {/* АВАТАР С ОНЛАЙН СТАТУСОМ */}
           <View style={styles.avatarSection}>
-            <View
-              style={[
-                styles.avatar,
-                { backgroundColor: theme.primary },
-              ]}
-            >
-              <ThemedText style={styles.avatarText}>
-                {(otherUser.firstName || otherUser.username || "?").charAt(0).toUpperCase()}
-              </ThemedText>
-            </View>
+            {(() => {
+              const avatarUrl = resolveAvatarUrl(otherUser.avatarUrl);
+              if (avatarUrl) {
+                return (
+                  <Image
+                    source={{ uri: avatarUrl }}
+                    style={styles.avatar}
+                  />
+                );
+              }
+              return (
+                <GradientAvatarPlaceholder
+                  firstName={otherUser.firstName}
+                  lastName={otherUser.lastName}
+                  username={otherUser.username}
+                  size={52}
+                />
+              );
+            })()}
             
             {/* ЗЕЛЕНАЯ ТОЧКА ОНЛАЙНА */}
             {otherUser.isOnline && (

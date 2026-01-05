@@ -258,6 +258,11 @@ export const privateChats = pgTable("private_chats", {
   id: serial("id").primaryKey(),
   user1Id: integer("user1_id").notNull().references(() => users.id),
   user2Id: integer("user2_id").notNull().references(() => users.id),
+  // Pinned/Muted для каждого пользователя отдельно
+  isPinned1: boolean("is_pinned_1").default(false),
+  isPinned2: boolean("is_pinned_2").default(false),
+  isMuted1: boolean("is_muted_1").default(false),
+  isMuted2: boolean("is_muted_2").default(false),
   lastMessageAt: timestamp("last_message_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -267,12 +272,42 @@ export const privateMessages = pgTable("private_messages", {
   chatId: integer("chat_id").notNull().references(() => privateChats.id),
   senderId: integer("sender_id").notNull().references(() => users.id),
   message: text("message"),
-  mediaType: text("media_type"), // 'photo', 'video', 'file'
+  mediaType: text("media_type"), // 'photo', 'video', 'voice', 'video_circle', 'file'
   mediaUrl: text("media_url"),
   mediaFileName: text("media_file_name"),
   mediaSize: integer("media_size"), // в байтах
+  mediaDuration: integer("media_duration"), // для аудио/видео в секундах
+  mediaWidth: integer("media_width"),
+  mediaHeight: integer("media_height"),
+  // Reply
+  replyToId: integer("reply_to_id"),
+  // Forward
+  forwardedFromId: integer("forwarded_from_id").references(() => users.id),
+  // Статусы
   isRead: boolean("is_read").default(false),
   readAt: timestamp("read_at"),
+  isEdited: boolean("is_edited").default(false),
+  editedAt: timestamp("edited_at"),
+  isDeleted: boolean("is_deleted").default(false),
+  deletedAt: timestamp("deleted_at"),
+  deletedForAll: boolean("deleted_for_all").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// РЕАКЦИИ НА СООБЩЕНИЯ
+export const messageReactions = pgTable("message_reactions", {
+  id: serial("id").primaryKey(),
+  messageId: integer("message_id").notNull().references(() => privateMessages.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  emoji: text("emoji").notNull(), // ❤️, 👍, 😂, 🔥, 😢, etc.
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ЗАБЛОКИРОВАННЫЕ ПОЛЬЗОВАТЕЛИ
+export const blockedUsers = pgTable("blocked_users", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  blockedUserId: integer("blocked_user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -311,6 +346,18 @@ export const userSessions = pgTable("user_sessions", {
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   lastUsedAt: timestamp("last_used_at").defaultNow(),
+});
+
+// PUSH-ТОКЕНЫ ДЛЯ УВЕДОМЛЕНИЙ (Expo / FCM)
+export const pushTokens = pgTable("push_tokens", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  token: text("token").notNull(),
+  platform: text("platform").notNull(), // 'ios', 'android', 'web'
+  deviceType: text("device_type"), // модель устройства
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // БАЛАНС ЗВЁЗД (серверный, защищённый)
@@ -354,7 +401,10 @@ export const insertAchievementSchema = createInsertSchema(achievements).omit({ i
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true, createdAt: true, lastSeenAt: true });
 export const insertUserProfilePhotoSchema = createInsertSchema(userProfilePhotos).omit({ id: true, createdAt: true });
 export const insertPrivateChatSchema = createInsertSchema(privateChats).omit({ id: true, createdAt: true, lastMessageAt: true });
-export const insertPrivateMessageSchema = createInsertSchema(privateMessages).omit({ id: true, createdAt: true, readAt: true });
+export const insertPrivateMessageSchema = createInsertSchema(privateMessages).omit({ id: true, createdAt: true, readAt: true, editedAt: true, deletedAt: true });
+export const insertMessageReactionSchema = createInsertSchema(messageReactions).omit({ id: true, createdAt: true });
+export const insertBlockedUserSchema = createInsertSchema(blockedUsers).omit({ id: true, createdAt: true });
+export const insertPushTokenSchema = createInsertSchema(pushTokens).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertInviteCodeSchema = createInsertSchema(inviteCodes).omit({ id: true, createdAt: true });
 export const insertClassSchema = createInsertSchema(classes).omit({ id: true, createdAt: true });
@@ -424,6 +474,10 @@ export type PrivateChat = typeof privateChats.$inferSelect;
 export type InsertPrivateChat = z.infer<typeof insertPrivateChatSchema>;
 export type PrivateMessage = typeof privateMessages.$inferSelect;
 export type InsertPrivateMessage = z.infer<typeof insertPrivateMessageSchema>;
+export type MessageReaction = typeof messageReactions.$inferSelect;
+export type InsertMessageReaction = z.infer<typeof insertMessageReactionSchema>;
+export type BlockedUser = typeof blockedUsers.$inferSelect;
+export type InsertBlockedUser = z.infer<typeof insertBlockedUserSchema>;
 export type Friendship = typeof friendships.$inferSelect;
 export type InsertFriendship = z.infer<typeof insertFriendshipSchema>;
 export type GiftType = typeof giftTypes.$inferSelect;

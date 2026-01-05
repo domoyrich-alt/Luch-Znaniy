@@ -267,7 +267,7 @@ export const ChatHeader = memo(function ChatHeader({
 });
 
 // ======================
-// СТИЛИ
+// СТИЛИ (Premium Glassmorphism Design)
 // ======================
 const styles = StyleSheet.create({
   container: {
@@ -275,10 +275,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     height: sizes.headerHeight,
-    backgroundColor: '#1A1A1A',  // Тёмный фон шапки как в Telegram
+    backgroundColor: colors.headerBackground || 'rgba(13, 27, 42, 0.92)',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2D2D2D',
-    paddingHorizontal: sizes.paddingS,
+    borderBottomColor: colors.divider,
+    paddingHorizontal: sizes.paddingM,
+    // Premium blur effect via native backdrop
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   
   // Левая секция
@@ -288,36 +294,39 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   
-  // Аватар
+  // Аватар - premium styling
   avatarContainer: {
     position: 'relative',
     marginRight: sizes.paddingM,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,  // КРУГ: половина от width/height
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   avatarText: {
     color: colors.textPrimary,
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
+    letterSpacing: -0.3,
   },
   onlineIndicator: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
     backgroundColor: colors.online,
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: colors.background,
   },
   
-  // Название и статус
+  // Название и статус - premium typography
   titleContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -326,26 +335,31 @@ const styles = StyleSheet.create({
     ...typography.bodyLarge,
     color: colors.textPrimary,
     fontWeight: '600',
+    fontSize: 17,
+    letterSpacing: -0.3,
   },
   status: {
     ...typography.caption,
     color: colors.textSecondary,
-    marginTop: 1,
+    marginTop: 2,
+    fontSize: 13,
+    letterSpacing: 0,
   },
   
-  // Правая секция
+  // Правая секция - consistent icon spacing
   rightSection: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 2,
   },
   
-  // Кнопки
+  // Кнопки - 2px stroke weight icons
   iconButton: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
+    borderRadius: 21,
   },
 });
 

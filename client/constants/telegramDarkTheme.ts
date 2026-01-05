@@ -4,65 +4,75 @@
  */
 
 // ======================
-// ОСНОВНЫЕ ЦВЕТА
+// ОСНОВНЫЕ ЦВЕТА (Deep Navy + Slate Gray Premium Palette)
 // ======================
 export const TelegramDarkColors = {
-  // Фоны
-  background: '#0F0F0F',           // Главный фон (черный)
-  backgroundSecondary: '#1A1A1A',  // Вторичный фон (левая панель)
-  backgroundTertiary: '#2D2D2D',   // Третичный фон (карточки)
-  surface: '#1E1E1E',              // Поверхность элементов
+  // Фоны - Deep Navy palette для премиум вида
+  background: '#0D1B2A',           // Главный фон чата - Deep Navy
+  backgroundSecondary: '#1B263B',  // Вторичный фон (левая панель) - Navy Blue
+  backgroundTertiary: '#2D3A4F',   // Третичный фон (карточки, поле ввода) - Slate Gray
+  surface: '#253142',              // Поверхность элементов
+  surfaceElevated: '#324156',      // Приподнятые элементы
   
   // Границы и разделители
-  border: '#2D2D2D',
-  separator: '#2D2D2D',
+  border: '#3D4F66',
+  separator: '#2D3A4F',
   divider: 'rgba(255, 255, 255, 0.08)',
   
-  // Текст
+  // Текст - высокий контраст
   textPrimary: '#FFFFFF',
-  textSecondary: '#8E8E93',
-  textTertiary: '#636366',
-  textAccent: '#8A2BE2',
+  textSecondary: '#8899A6',        // Dimmed gray для вторичного текста
+  textTertiary: '#657786',
+  textAccent: '#7AA2F7',
   
-  // Акцентные цвета
-  primary: '#8A2BE2',              // Неоново-фиолетовый (основной)
-  primaryLight: '#9D4EDD',
-  primaryDark: '#7B1FA2',
+  // Акцентные цвета - глубокий синий с фиолетовым оттенком
+  primary: '#7AA2F7',              // Accent blue 
+  primaryLight: '#9DB5FF',
+  primaryDark: '#5A8AE6',
   
   // Функциональные цвета
-  accent: '#8A2BE2',
-  success: '#34C759',
-  warning: '#FF9500',
-  error: '#FF3B30',
-  info: '#007AFF',
-  online: '#34C759',
+  accent: '#7AA2F7',
+  success: '#73DACA',
+  warning: '#FF9E64',
+  error: '#F7768E',
+  info: '#7DCFFF',
+  online: '#9ECE6A',
   
-  // Сообщения
-  messageMine: '#8A2BE2',          // Мои сообщения - фиолетовый
-  messageTheirs: '#2D2D2D',        // Чужие сообщения - серый
+  // Сообщения - градиентный стиль
+  messageMine: '#2B5278',          // Мои сообщения - глубокий синий
+  messageMineGradientStart: '#3B6A94',
+  messageMineGradientEnd: '#2B5278',
+  messageTheirs: '#1B263B',        // Чужие сообщения - темный slate
   messageText: '#FFFFFF',
-  messageTime: 'rgba(255, 255, 255, 0.6)',
+  messageTime: 'rgba(255, 255, 255, 0.55)',
   
   // Overlay и эффекты
-  overlay: 'rgba(0, 0, 0, 0.5)',
-  ripple: 'rgba(255, 255, 255, 0.1)',
-  shadow: 'rgba(0, 0, 0, 0.3)',
-  glow: 'rgba(138, 43, 226, 0.3)',  // Фиолетовое свечение
+  overlay: 'rgba(13, 27, 42, 0.85)',
+  ripple: 'rgba(122, 162, 247, 0.12)',
+  shadow: 'rgba(0, 0, 0, 0.35)',
+  glow: 'rgba(122, 162, 247, 0.25)',  // Синее свечение
+  
+  // Дополнительные цвета для UI
+  inputBackground: '#1B263B',
+  inputBorder: '#3D4F66',
+  headerBackground: 'rgba(13, 27, 42, 0.92)',
+  tabBarBackground: 'rgba(27, 38, 59, 0.95)',
 };
 
 // ======================
-// РАЗМЕРЫ И ОТСТУПЫ
+// РАЗМЕРЫ И ОТСТУПЫ (High-fidelity UI specs)
 // ======================
 export const TelegramSizes = {
-  // Отступы
+  // Отступы - увеличенные для премиум вида
   paddingXS: 4,
   paddingS: 8,
   paddingM: 12,
   paddingL: 16,
   paddingXL: 20,
   paddingXXL: 24,
+  paddingChat: 14,          // Отступы в чате
   
-  // Радиусы
+  // Радиусы - bubble radius 18px
   radiusXS: 4,
   radiusS: 8,
   radiusM: 12,
@@ -71,28 +81,30 @@ export const TelegramSizes = {
   radiusFull: 9999,
   
   // Размеры элементов
-  avatarSmall: 36,
-  avatarMedium: 44,
-  avatarLarge: 56,
-  avatarXL: 80,
+  avatarSmall: 38,
+  avatarMedium: 48,         // Увеличенный аватар в списке
+  avatarLarge: 60,
+  avatarXL: 88,
   
-  chatItemHeight: 72,
-  headerHeight: 56,
-  bottomNavHeight: 56,
-  inputMinHeight: 44,
-  inputMaxHeight: 120,
+  chatItemHeight: 76,       // Больше высота для "воздуха"
+  headerHeight: 60,
+  bottomNavHeight: 60,
+  inputMinHeight: 48,
+  inputMaxHeight: 140,
   
-  // Сообщения
-  messageMaxWidth: '75%',
-  messagePadding: 12,
-  messageRadius: 12,
-  messageCornerRadius: 4,  // Угол со стороны отправителя
+  // Сообщения - bubble radius 18px with tails
+  messageMaxWidth: '78%',
+  messagePadding: 14,
+  messageRadius: 18,        // Premium bubble radius
+  messageTailRadius: 6,     // Tail corner radius
+  messageCornerRadius: 6,   // Угол со стороны отправителя
   
-  // Иконки
+  // Иконки - 2px stroke weight
   iconSmall: 18,
   iconMedium: 22,
-  iconLarge: 26,
-  iconXL: 32,
+  iconLarge: 24,
+  iconXL: 28,
+  iconStrokeWidth: 2,       // Consistent stroke weight
 };
 
 // ======================

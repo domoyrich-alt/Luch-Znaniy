@@ -30,6 +30,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useStars } from '@/context/StarsContext';
 import ChatService, { PrivateMessage } from '@/services/ChatService';
 import ImageViewer from '@/components/ImageViewer';
+import { wsClient } from '@/lib/websocket';
 
 import {
   ChatHeader,
@@ -42,6 +43,8 @@ import {
   type Message,
   type AttachOption,
 } from '@/components/chat/v2';
+import { TypingIndicator } from '@/components/chat/v2/TypingIndicator';
+import { ReactionPicker } from '@/components/chat/v2/ReactionPicker';
 import GiftModal from '@/components/chat/GiftModal';
 
 // ======================
@@ -77,6 +80,7 @@ export default function ChatScreenV2() {
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState(0);
   
   // Модальные окна
   const [attachMenuVisible, setAttachMenuVisible] = useState(false);
@@ -84,6 +88,16 @@ export default function ChatScreenV2() {
   const [giftModalVisible, setGiftModalVisible] = useState(false);
   const [imageViewerVisible, setImageViewerVisible] = useState(false);
   const [selectedImageUrl, setSelectedImageUrl] = useState('');
+  
+  // Typing indicator
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+  
+  // Reply state
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  
+  // Reaction picker state
+  const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
+  const [reactionTargetMessage, setReactionTargetMessage] = useState<Message | null>(null);
   
   // Превью
   const [mediaPreview, setMediaPreview] = useState<{
@@ -99,8 +113,141 @@ export default function ChatScreenV2() {
     if (chatId && user?.id) {
       loadMessages();
       ChatService.markMessagesAsRead(chatId, user.id).catch(console.error);
+      
+      // Подключаем WebSocket для real-time обновлений
+      wsClient.connect(user.id, [chatId.toString()]);
     }
   }, [chatId, user?.id]);
+
+  // Подписка на WebSocket сообщения
+  useEffect(() => {
+    if (!chatId || !user?.id) return;
+
+    // Обработчик входящих сообщений
+    const handleNewMessage = (wsMessage: any) => {
+      const msgData = wsMessage.payload;
+      
+      // Проверяем, что сообщение для этого чата и не от нас
+      if (msgData.chatId === chatId && msgData.senderId !== user.id) {
+        const newMessage: Message = {
+          id: msgData.id,
+          text: msgData.message,
+          senderId: msgData.senderId,
+          createdAt: msgData.createdAt,
+          isRead: false,
+          mediaUrl: msgData.mediaUrl,
+          mediaType: msgData.mediaType,
+          isGift: msgData.message?.startsWith('🎁 Подарок:'),
+        };
+        
+        setMessages(prev => {
+          // Проверяем, нет ли уже этого сообщения
+          if (prev.some(m => m.id === msgData.id)) return prev;
+          return [...prev, newMessage];
+        });
+        
+        // Отмечаем как прочитанное
+        ChatService.markMessagesAsRead(chatId, user.id).catch(console.error);
+        
+        // Haptic feedback
+        if (Platform.OS !== 'web') {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        
+        // Скролл вниз
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    };
+
+    // Обработчик прочтения сообщений
+    const handleMessageRead = (wsMessage: any) => {
+      const { chatId: readChatId, userId: readUserId } = wsMessage.payload;
+      
+      if (readChatId === chatId && readUserId !== user.id) {
+        // Отмечаем все наши сообщения как прочитанные
+        setMessages(prev => prev.map(msg => 
+          msg.senderId === user.id ? { ...msg, isRead: true } : msg
+        ));
+      }
+    };
+
+    wsClient.on('message', handleNewMessage);
+    wsClient.on('message_read', handleMessageRead);
+
+    // Typing indicator handler
+    const handleTyping = (wsMessage: any) => {
+      const { chatId: typingChatId, userId: typingUserId, isTyping } = wsMessage.payload;
+      if (typingChatId === chatId && typingUserId === otherUserId) {
+        setIsOtherTyping(isTyping);
+      }
+    };
+
+    // Message reaction handler
+    const handleReaction = (wsMessage: any) => {
+      const { messageId, emoji, action, userId: reactionUserId } = wsMessage.payload;
+      setMessages(prev => prev.map(msg => {
+        if (msg.id !== messageId) return msg;
+        
+        const reactions = [...(msg.reactions || [])];
+        const existingIndex = reactions.findIndex(r => r.emoji === emoji);
+        
+        if (action === 'add') {
+          if (existingIndex >= 0) {
+            reactions[existingIndex] = {
+              ...reactions[existingIndex],
+              count: reactions[existingIndex].count + 1,
+              users: [...reactions[existingIndex].users, reactionUserId],
+            };
+          } else {
+            reactions.push({ emoji, count: 1, users: [reactionUserId] });
+          }
+        } else if (action === 'remove' && existingIndex >= 0) {
+          reactions[existingIndex] = {
+            ...reactions[existingIndex],
+            count: reactions[existingIndex].count - 1,
+            users: reactions[existingIndex].users.filter((id: number) => id !== reactionUserId),
+          };
+          if (reactions[existingIndex].count === 0) {
+            reactions.splice(existingIndex, 1);
+          }
+        }
+        
+        return { ...msg, reactions };
+      }));
+    };
+
+    // Message edited handler
+    const handleMessageEdited = (wsMessage: any) => {
+      const { messageId, newMessage, editedAt } = wsMessage.payload;
+      setMessages(prev => prev.map(msg => 
+        msg.id === messageId ? { ...msg, text: newMessage, isEdited: true } : msg
+      ));
+    };
+
+    // Message deleted handler
+    const handleMessageDeleted = (wsMessage: any) => {
+      const { messageId, forAll } = wsMessage.payload;
+      if (forAll) {
+        setMessages(prev => prev.filter(msg => msg.id !== messageId));
+      }
+    };
+
+    wsClient.on('typing', handleTyping);
+    wsClient.on('message_reaction', handleReaction);
+    wsClient.on('message_edited', handleMessageEdited);
+    wsClient.on('message_deleted', handleMessageDeleted);
+
+    return () => {
+      wsClient.off('message', handleNewMessage);
+      wsClient.off('message_read', handleMessageRead);
+      wsClient.off('typing', handleTyping);
+      wsClient.off('message_reaction', handleReaction);
+      wsClient.off('message_edited', handleMessageEdited);
+      wsClient.off('message_deleted', handleMessageDeleted);
+    };
+  }, [chatId, user?.id, otherUserId]);
 
   const loadMessages = async () => {
     try {
@@ -118,6 +265,13 @@ export default function ChatScreenV2() {
           mediaUrl: msg.mediaUrl,
           mediaType: msg.mediaType as any,
           isGift: msg.message?.startsWith('🎁 Подарок:'),
+          reactions: (msg as any).reactions || [],
+          isEdited: (msg as any).isEdited,
+          replyTo: (msg as any).replyTo ? {
+            id: (msg as any).replyTo.id,
+            text: (msg as any).replyTo.message || '📎 Медиа',
+            senderName: (msg as any).replyTo.senderId === user?.id ? 'Вы' : otherUserName,
+          } : undefined,
         }));
         
         setMessages(formattedMessages);
@@ -170,8 +324,24 @@ export default function ChatScreenV2() {
         setMessages(prev => [...prev, newMessage]);
         setMediaPreview(null);
       } else {
-        // Отправка текста
-        const msg = await ChatService.sendMessage(chatId, user.id, messageText);
+        // Отправка текста (с возможным reply)
+        let msg;
+        if (replyingTo) {
+          // Send with reply using new API
+          const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/chats/${chatId}/messages/reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              senderId: user.id,
+              message: messageText,
+              replyToId: replyingTo.id,
+              senderName: user.firstName || 'User',
+            }),
+          });
+          msg = await response.json();
+        } else {
+          msg = await ChatService.sendMessage(chatId, user.id, messageText);
+        }
         
         const newMessage: Message = {
           id: msg.id,
@@ -179,12 +349,18 @@ export default function ChatScreenV2() {
           senderId: msg.senderId,
           createdAt: msg.createdAt,
           isRead: msg.isRead,
+          replyTo: msg.replyTo ? {
+            id: msg.replyTo.id,
+            text: msg.replyTo.message || '📎 Медиа',
+            senderName: msg.replyTo.senderId === user.id ? 'Вы' : otherUserName,
+          } : undefined,
         };
 
         setMessages(prev => [...prev, newMessage]);
       }
       
       setMessageText('');
+      setReplyingTo(null);  // Clear reply after sending
       
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
@@ -195,7 +371,7 @@ export default function ChatScreenV2() {
     } finally {
       setSending(false);
     }
-  }, [messageText, mediaPreview, chatId, user?.id]);
+  }, [messageText, mediaPreview, chatId, user?.id, replyingTo, otherUserName]);
 
   // Обработка вложений
   const handleAttachOption = useCallback(async (option: AttachOption) => {
@@ -301,6 +477,19 @@ export default function ChatScreenV2() {
   // Выбор эмодзи
   const handleEmojiSelect = useCallback((emoji: string) => {
     setMessageText(prev => prev + emoji);
+    // Обновляем позицию курсора на конец текста
+    setCursorPosition(prev => prev + emoji.length);
+  }, []);
+
+  // Вставка эмодзи на позицию курсора
+  const handleTextWithEmoji = useCallback((text: string, newCursorPosition: number) => {
+    setMessageText(text);
+    setCursorPosition(newCursorPosition);
+  }, []);
+
+  // Обработка изменения выделения/курсора
+  const handleSelectionChange = useCallback((selection: { start: number; end: number }) => {
+    setCursorPosition(selection.start);
   }, []);
 
   // Нажатие на изображение
@@ -310,14 +499,161 @@ export default function ChatScreenV2() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
+  // Handle reply swipe
+  const handleReply = useCallback((message: Message) => {
+    setReplyingTo(message);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, []);
+
+  // Handle double tap for ❤️ reaction
+  const handleDoubleTap = useCallback(async (message: Message) => {
+    if (!user?.id) return;
+    
+    try {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/messages/${message.id}/reactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, emoji: '❤️' }),
+      });
+      
+      if (response.ok) {
+        // Update locally immediately
+        setMessages(prev => prev.map(msg => {
+          if (msg.id !== message.id) return msg;
+          const reactions = [...(msg.reactions || [])];
+          const heartIndex = reactions.findIndex(r => r.emoji === '❤️');
+          
+          if (heartIndex >= 0) {
+            if (!reactions[heartIndex].users.includes(user.id)) {
+              reactions[heartIndex] = {
+                ...reactions[heartIndex],
+                count: reactions[heartIndex].count + 1,
+                users: [...reactions[heartIndex].users, user.id],
+              };
+            }
+          } else {
+            reactions.push({ emoji: '❤️', count: 1, users: [user.id] });
+          }
+          
+          return { ...msg, reactions };
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to add reaction:', error);
+    }
+  }, [user?.id]);
+
+  // Handle long press to show reaction picker
+  const handleLongPress = useCallback((message: Message) => {
+    setReactionTargetMessage(message);
+    setReactionPickerVisible(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, []);
+
+  // Handle reaction selection from picker
+  const handleReactionSelect = useCallback(async (emoji: string) => {
+    if (!reactionTargetMessage || !user?.id) return;
+    
+    try {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/messages/${reactionTargetMessage.id}/reactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, emoji }),
+      });
+      
+      if (response.ok) {
+        // Update locally
+        setMessages(prev => prev.map(msg => {
+          if (msg.id !== reactionTargetMessage.id) return msg;
+          const reactions = [...(msg.reactions || [])];
+          const emojiIndex = reactions.findIndex(r => r.emoji === emoji);
+          
+          if (emojiIndex >= 0) {
+            if (!reactions[emojiIndex].users.includes(user.id)) {
+              reactions[emojiIndex] = {
+                ...reactions[emojiIndex],
+                count: reactions[emojiIndex].count + 1,
+                users: [...reactions[emojiIndex].users, user.id],
+              };
+            }
+          } else {
+            reactions.push({ emoji, count: 1, users: [user.id] });
+          }
+          
+          return { ...msg, reactions };
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to add reaction:', error);
+    }
+    
+    setReactionPickerVisible(false);
+    setReactionTargetMessage(null);
+  }, [reactionTargetMessage, user?.id]);
+
+  // Handle reaction tap (toggle own reaction)
+  const handleReactionPress = useCallback(async (message: Message, emoji: string) => {
+    if (!user?.id) return;
+    
+    const reaction = message.reactions?.find(r => r.emoji === emoji);
+    const hasMyReaction = reaction?.users.includes(user.id);
+    
+    try {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/messages/${message.id}/reactions`, {
+        method: hasMyReaction ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, emoji }),
+      });
+      
+      if (response.ok) {
+        // Update locally
+        setMessages(prev => prev.map(msg => {
+          if (msg.id !== message.id) return msg;
+          const reactions = [...(msg.reactions || [])];
+          const emojiIndex = reactions.findIndex(r => r.emoji === emoji);
+          
+          if (hasMyReaction && emojiIndex >= 0) {
+            reactions[emojiIndex] = {
+              ...reactions[emojiIndex],
+              count: reactions[emojiIndex].count - 1,
+              users: reactions[emojiIndex].users.filter((id: number) => id !== user.id),
+            };
+            if (reactions[emojiIndex].count === 0) {
+              reactions.splice(emojiIndex, 1);
+            }
+          } else if (!hasMyReaction) {
+            if (emojiIndex >= 0) {
+              reactions[emojiIndex] = {
+                ...reactions[emojiIndex],
+                count: reactions[emojiIndex].count + 1,
+                users: [...reactions[emojiIndex].users, user.id],
+              };
+            } else {
+              reactions.push({ emoji, count: 1, users: [user.id] });
+            }
+          }
+          
+          return { ...msg, reactions };
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to toggle reaction:', error);
+    }
+  }, [user?.id]);
+
   // Рендер сообщения
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <MessageBubble
       message={item}
       isOwn={item.senderId === user?.id}
       onImagePress={handleImagePress}
+      onReply={handleReply}
+      onDoubleTap={handleDoubleTap}
+      onLongPress={() => handleLongPress(item)}
+      onReactionPress={handleReactionPress}
+      currentUserId={user?.id}
     />
-  ), [user?.id, handleImagePress]);
+  ), [user?.id, handleImagePress, handleReply, handleDoubleTap, handleLongPress, handleReactionPress]);
 
   const keyExtractor = useCallback((item: Message) => item.id.toString(), []);
 
@@ -364,6 +700,18 @@ export default function ChatScreenV2() {
         contentContainerStyle={styles.messagesList}
         showsVerticalScrollIndicator={false}
         inverted={false}
+        onTouchStart={() => {
+          if (reactionPickerVisible) {
+            setReactionPickerVisible(false);
+            setReactionTargetMessage(null);
+          }
+        }}
+        ListFooterComponent={
+          <TypingIndicator
+            visible={isOtherTyping}
+            userName={otherUserName}
+          />
+        }
       />
       
       {/* Input */}
@@ -377,6 +725,13 @@ export default function ChatScreenV2() {
         onCancelMedia={() => setMediaPreview(null)}
         disabled={sending}
         bottomInset={insets.bottom}
+        onSelectionChange={handleSelectionChange}
+        replyTo={replyingTo ? {
+          id: replyingTo.id,
+          text: replyingTo.text || '📎 Медиа',
+          senderName: replyingTo.senderId === user?.id ? 'Вы' : otherUserName,
+        } : undefined}
+        onCancelReply={() => setReplyingTo(null)}
       />
       
       {/* Attach Menu */}
@@ -391,6 +746,9 @@ export default function ChatScreenV2() {
         visible={emojiPickerVisible}
         onClose={() => setEmojiPickerVisible(false)}
         onEmojiSelect={handleEmojiSelect}
+        cursorPosition={cursorPosition}
+        messageText={messageText}
+        onTextWithEmoji={handleTextWithEmoji}
       />
       
       {/* Gift Modal */}
@@ -418,7 +776,7 @@ export default function ChatScreenV2() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0F0F',  // Тёмный фон как в Telegram
+    backgroundColor: colors.background,  // Тёмный фон как в Telegram
   },
   loadingContainer: {
     justifyContent: 'center',
@@ -426,8 +784,8 @@ const styles = StyleSheet.create({
   },
   messagesList: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#0F0F0F',  // Тёмный фон
+    paddingHorizontal: 8,
+    backgroundColor: colors.background,  // Тёмный фон
     flexGrow: 1,
   },
 });

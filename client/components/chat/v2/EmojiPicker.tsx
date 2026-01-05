@@ -214,12 +214,21 @@ interface EmojiPickerProps {
   visible: boolean;
   onClose: () => void;
   onEmojiSelect: (emoji: string) => void;
+  /** Позиция курсора для вставки эмодзи */
+  cursorPosition?: number;
+  /** Текущий текст сообщения */
+  messageText?: string;
+  /** Коллбэк для установки полного текста с эмодзи на нужной позиции */
+  onTextWithEmoji?: (text: string, newCursorPosition: number) => void;
 }
 
 export const EmojiPicker = memo(function EmojiPicker({
   visible,
   onClose,
   onEmojiSelect,
+  cursorPosition,
+  messageText = '',
+  onTextWithEmoji,
 }: EmojiPickerProps) {
   const [activeCategory, setActiveCategory] = useState('smileys');
   const [recentEmojis, setRecentEmojis] = useState<string[]>([]);
@@ -265,8 +274,18 @@ export const EmojiPicker = memo(function EmojiPicker({
       return [emoji, ...filtered].slice(0, 32);
     });
     
-    onEmojiSelect(emoji);
-  }, [onEmojiSelect]);
+    // Если есть позиция курсора и коллбэк, вставляем на позицию
+    if (onTextWithEmoji && cursorPosition !== undefined) {
+      const before = messageText.substring(0, cursorPosition);
+      const after = messageText.substring(cursorPosition);
+      const newText = before + emoji + after;
+      const newCursorPos = cursorPosition + emoji.length;
+      onTextWithEmoji(newText, newCursorPos);
+    } else {
+      // Обычная вставка в конец
+      onEmojiSelect(emoji);
+    }
+  }, [onEmojiSelect, cursorPosition, messageText, onTextWithEmoji]);
 
   const handleCategoryPress = useCallback((categoryId: string) => {
     if (Platform.OS !== 'web') {

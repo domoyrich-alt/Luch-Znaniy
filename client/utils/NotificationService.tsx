@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 // Настройка поведения уведомлений
 Notifications.setNotificationHandler({
@@ -14,14 +15,22 @@ Notifications.setNotificationHandler({
 });
 
 interface NotificationData {
-  type: 'gift' | 'grade' | 'homework' | 'announcement' | 'star_bonus';
+  type: 'gift' | 'grade' | 'homework' | 'announcement' | 'star_bonus' | 'chat_message';
   [key: string]: any;
+}
+
+interface FCMConfig {
+  serverKey?: string;
+  senderId?: string;
 }
 
 export class NotificationService {
   private static expoPushToken: string | null = null;
+  private static fcmToken: string | null = null;
+  private static notificationListener: Notifications.EventSubscription | null = null;
+  private static responseListener: Notifications.EventSubscription | null = null;
 
-  // Регистрация для push-уведомлений
+  // Регистрация для push-уведомлений (Expo + FCM)
   static async registerForPushNotificationsAsync(): Promise<string | null> {
     let token: string | null = null;
 
@@ -198,6 +207,96 @@ export class NotificationService {
   // Получить токен
   static getToken(): string | null {
     return this.expoPushToken;
+  }
+
+  // Получить FCM токен
+  static getFCMToken(): string | null {
+    return this.fcmToken;
+  }
+
+  // Добавить слушатели уведомлений
+  static addNotificationListeners(
+    onNotificationReceived?: (notification: Notifications.Notification) => void,
+    onNotificationResponse?: (response: Notifications.NotificationResponse) => void
+  ) {
+    // Слушатель входящих уведомлений (когда приложение открыто)
+    this.notificationListener = Notifications.addNotificationReceivedListener((notification) => {
+      console.log('📬 Notification received:', notification);
+      onNotificationReceived?.(notification);
+    });
+
+    // Слушатель ответов на уведомления (когда пользователь нажимает)
+    this.responseListener = Notifications.addNotificationResponseReceivedListener((response) => {
+      console.log('📱 Notification response:', response);
+      onNotificationResponse?.(response);
+    });
+  }
+
+  // Удалить слушатели
+  static removeNotificationListeners() {
+    if (this.notificationListener) {
+      Notifications.removeNotificationSubscription(this.notificationListener);
+      this.notificationListener = null;
+    }
+    if (this.responseListener) {
+      Notifications.removeNotificationSubscription(this.responseListener);
+      this.responseListener = null;
+    }
+  }
+
+  // Отправить push token на сервер для FCM
+  static async sendTokenToServer(userId: number, serverUrl: string): Promise<boolean> {
+    try {
+      const token = this.expoPushToken || this.fcmToken;
+      if (!token) {
+        console.warn('No push token available');
+        return false;
+      }
+
+      const response = await fetch(`${serverUrl}/api/push-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          token,
+          platform: Platform.OS,
+          deviceType: Device.modelName || 'unknown',
+        }),
+      });
+
+      if (response.ok) {
+        console.log('✅ Push token sent to server');
+        return true;
+      } else {
+        console.error('❌ Failed to send push token:', await response.text());
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Error sending push token:', error);
+      return false;
+    }
+  }
+
+  // Уведомление о новом сообщении в чате
+  static async sendChatMessageNotification(
+    senderName: string,
+    message: string,
+    chatId: number,
+    senderAvatar?: string
+  ) {
+    await this.sendLocalNotification(
+      `💬 ${senderName}`,
+      message.length > 100 ? message.substring(0, 100) + '...' : message,
+      { 
+        type: 'chat_message', 
+        chatId, 
+        senderName,
+        senderAvatar,
+      },
+      'default'
+    );
   }
 
   private static getRoleEmoji(role: string): string {

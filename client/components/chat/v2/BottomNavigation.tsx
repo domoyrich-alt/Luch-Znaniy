@@ -182,15 +182,21 @@ export const BottomNavigation = memo(function BottomNavigation({
 });
 
 // ======================
-// СТИЛИ
+// СТИЛИ (Premium Tab Bar)
 // ======================
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: colors.backgroundSecondary,
+    backgroundColor: colors.tabBarBackground || 'rgba(27, 38, 59, 0.95)',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingTop: sizes.paddingS,
+    borderTopColor: colors.divider,
+    paddingTop: sizes.paddingS + 2,
+    // Glassmorphism effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 8,
   },
   
   tabButton: {
@@ -202,30 +208,38 @@ const styles = StyleSheet.create({
   
   iconContainer: {
     position: 'relative',
-    marginBottom: 2,
+    marginBottom: 3,
   },
   
   badge: {
     position: 'absolute',
-    top: -4,
-    right: -8,
+    top: -5,
+    right: -10,
     backgroundColor: colors.primary,
     borderRadius: sizes.radiusFull,
-    minWidth: 18,
-    height: 18,
+    minWidth: 20,
+    height: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 4,
   },
   badgeText: {
     color: colors.textPrimary,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
+    letterSpacing: -0.3,
   },
   
   tabLabel: {
     ...typography.caption,
     textAlign: 'center',
+    fontSize: 11,
+    letterSpacing: 0.1,
   },
 });
 

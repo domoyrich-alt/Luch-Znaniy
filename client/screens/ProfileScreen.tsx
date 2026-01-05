@@ -118,7 +118,7 @@ export default function ProfileScreen() {
   const { theme, isDark } = useTheme();
   const { user, logout } = useAuth();
   const { stars, achievements } = useStars();
-  const { settings } = useSettings();
+  const { settings, profileVersion } = useSettings();
   
   // Состояния
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -205,10 +205,18 @@ export default function ProfileScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // Перезагружаем профиль при изменении profileVersion (например, после редактирования профиля)
+  useEffect(() => {
+    if (profileVersion > 0) {
+      loadProfile();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileVersion]);
+
   useFocusEffect(
     React.useCallback(() => {
       loadProfile();
-    }, [user?.id, settings.profile.avatar])
+    }, [user?.id, settings.profile.avatar, profileVersion])
   );
   
   // Состояния для друзей и подарков

@@ -23,6 +23,8 @@ import {
   UIManager,
   Image,
   Dimensions,
+  NativeSyntheticEvent,
+  TextInputSelectionChangeEventData,
 } from 'react-native';
 import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -34,6 +36,7 @@ import {
   TelegramTypography as typography,
 } from '@/constants/telegramDarkTheme';
 import { VideoCircleRecorder } from './VideoCircleRecorder';
+import { VoiceWaveform } from './VoiceWaveform';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -74,6 +77,10 @@ interface ChatInputProps {
   disabled?: boolean;
   placeholder?: string;
   bottomInset?: number;
+  /** Callback для получения текущей позиции курсора */
+  onSelectionChange?: (selection: { start: number; end: number }) => void;
+  /** Текущая позиция курсора для вставки emoji */
+  selection?: { start: number; end: number };
 }
 
 const InputButton = memo(function InputButton({
@@ -200,18 +207,22 @@ export const ChatInput = memo(function ChatInput({
   disabled = false,
   placeholder = 'Сообщение...',
   bottomInset = 0,
+  onSelectionChange,
+  selection,
 }: ChatInputProps) {
   const [inputHeight, setInputHeight] = useState(44);
   const [isRecording, setIsRecording] = useState(false);
   const [recordMode, setRecordMode] = useState<'voice' | 'video'>('voice');
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [showVideoRecorder, setShowVideoRecorder] = useState(false);
+  const [localSelection, setLocalSelection] = useState({ start: 0, end: 0 });
   
   const inputRef = useRef<TextInput>(null);
   const sendButtonAnim = useRef(new Animated.Value(0)).current;
   const micButtonAnim = useRef(new Animated.Value(1)).current;
   const recordingAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const micScaleAnim = useRef(new Animated.Value(1)).current;
   const durationTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const wasLongPress = useRef(false);
 
@@ -393,6 +404,12 @@ export const ChatInput = memo(function ChatInput({
             value={value}
             onChangeText={onChangeText}
             onContentSizeChange={handleContentSizeChange}
+            onSelectionChange={(e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+              const sel = e.nativeEvent.selection;
+              setLocalSelection(sel);
+              onSelectionChange?.(sel);
+            }}
+            selection={selection}
             placeholder={hasMedia ? "Добавить подпись..." : placeholder}
             placeholderTextColor={colors.textTertiary}
             multiline
@@ -439,7 +456,7 @@ export const ChatInput = memo(function ChatInput({
             <Pressable
               style={[
                 styles.micButtonInner,
-                isRecording && { backgroundColor: colors.error },
+                isRecording && styles.micButtonRecording,
               ]}
               onPress={handleModeToggle}
               onLongPress={handleRecordPressIn}
@@ -448,8 +465,7 @@ export const ChatInput = memo(function ChatInput({
             >
               <Animated.View 
                 style={{ 
-                  opacity: isRecording ? recordingAnim : 1,
-                  transform: [{ scale: isRecording ? pulseAnim : 1 }],
+                  transform: [{ scale: isRecording ? pulseAnim : micScaleAnim }],
                 }}
               >
                 {recordMode === 'voice' ? (
@@ -474,9 +490,16 @@ export const ChatInput = memo(function ChatInput({
             </Pressable>
           </Animated.View>
 
+          {/* Recording indicator с waveform */}
           {isRecording && (
             <View style={styles.recordingIndicator}>
               <View style={styles.recordingDot} />
+              <VoiceWaveform 
+                isRecording={isRecording} 
+                barCount={5} 
+                maxHeight={20}
+                color={colors.error}
+              />
               <ThemedText style={styles.recordingText}>
                 {formatDuration(recordingDuration)}
               </ThemedText>
@@ -525,60 +548,68 @@ const styles = StyleSheet.create({
   },
   replyName: {
     fontSize: 14,
-    color: '#5EB5F7',
+    color: colors.primary,
     fontWeight: '600',
     marginBottom: 2,
   },
   replyText: {
     fontSize: 14,
-    color: '#8B9BA5',
+    color: colors.textSecondary,
   },
   replyClose: {
     padding: 8,
     marginLeft: 8,
   },
   
+  // Input row - sleek design
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
   },
   
+  // Icon buttons - 2px stroke weight style
   inputButton: {
-    width: 44,
-    height: 44,
+    width: 42,
+    height: 42,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 22,
+    borderRadius: 21,
   },
   
+  // Input container - sleek with subtle border
   inputContainer: {
     flex: 1,
-    backgroundColor: '#242F3D',
-    borderRadius: 20,
-    marginHorizontal: 4,
+    backgroundColor: colors.inputBackground || '#1B263B',
+    borderRadius: 22,
+    marginHorizontal: 6,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.inputBorder || '#3D4F66',
   },
   inputContainerWithMedia: {
-    borderRadius: 16,
+    borderRadius: 18,
   },
   
+  // Text input - premium typography
   textInput: {
-    color: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    minHeight: 44,
-    maxHeight: 120,
+    color: colors.textPrimary,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    minHeight: 48,
+    maxHeight: 140,
     fontSize: 16,
+    letterSpacing: -0.2,
   },
   textInputWithMedia: {
-    paddingTop: 8,
-    minHeight: 40,
+    paddingTop: 10,
+    minHeight: 44,
   },
   
+  // Inline media preview
   inlineMediaContainer: {
-    padding: 8,
+    padding: 10,
     paddingBottom: 0,
   },
   inlineMediaContent: {
@@ -588,40 +619,41 @@ const styles = StyleSheet.create({
   inlineMediaImage: {
     width: SCREEN_WIDTH * 0.5,
     height: SCREEN_WIDTH * 0.35,
-    borderRadius: 12,
-    backgroundColor: '#1A2430',
+    borderRadius: 14,
+    backgroundColor: colors.surface,
   },
   inlineMediaFile: {
     width: 80,
     height: 80,
-    borderRadius: 12,
-    backgroundColor: '#1A2430',
+    borderRadius: 14,
+    backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
   inlineMediaClose: {
     position: 'absolute',
-    top: 4,
-    right: 4,
+    top: 6,
+    right: 6,
   },
   inlineMediaCloseCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   inlineMediaName: {
     fontSize: 12,
-    color: '#8B9BA5',
+    color: colors.textSecondary,
     marginTop: 4,
     marginLeft: 4,
   },
   
+  // Send button - premium gradient feel
   sendButtonContainer: {
-    width: 44,
-    height: 44,
+    width: 42,
+    height: 42,
     position: 'relative',
   },
   sendButton: {
@@ -630,12 +662,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sendButtonInner: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#5EB5F7',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
   },
   micButton: {
     ...StyleSheet.absoluteFillObject,
@@ -643,48 +680,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   micButtonInner: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  micButtonRecording: {
+    backgroundColor: colors.error,
   },
   videoCircle: {
     width: 28,
     height: 28,
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: '#5EB5F7',
+    borderColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // Recording indicator
   recordingIndicator: {
     position: 'absolute',
     left: -120,
     bottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: 'rgba(13, 27, 42, 0.9)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   recordingDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#FF4444',
+    backgroundColor: colors.error,
     marginRight: 8,
   },
   recordingText: {
     fontSize: 14,
-    color: '#FFFFFF',
+    color: colors.textPrimary,
     fontWeight: '600',
     marginRight: 8,
   },
   recordingHint: {
     fontSize: 12,
-    color: '#8B9BA5',
+    color: colors.textSecondary,
   },
 });
 
