@@ -20,3 +20,7 @@ export { default as GiftModal } from './GiftModal';
 export { default as DoubleTapLike } from './DoubleTapLike';
 export { default as ConfettiEffect } from './ConfettiEffect';
 
+// Telegram-style components
+export { TelegramChatHeader } from './TelegramChatHeader';
+export { TelegramMessageBubble } from './TelegramMessageBubble';
+export { TelegramInputBar } from './TelegramInputBar';
