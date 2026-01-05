@@ -161,7 +161,7 @@ export function TelegramMessageBubble({
                 styles.messageBubble,
                 message.isOwn && styles.ownMessageBubble,
                 {
-                  backgroundColor: message.isOwn ? '#8B5CF6' : '#2A2A2A',
+                  backgroundColor: message.isOwn ? theme.chatBubbleOwn || '#8B5CF6' : theme.chatBubbleIncoming || '#2A2A2A',
                 },
               ]}
             >
@@ -230,7 +230,7 @@ export function TelegramMessageBubble({
               style={[
                 styles.fileBubble,
                 {
-                  backgroundColor: message.isOwn ? '#8B5CF6' : '#2A2A2A',
+                  backgroundColor: message.isOwn ? theme.chatBubbleOwn || '#8B5CF6' : theme.chatBubbleIncoming || '#2A2A2A',
                 },
               ]}
             >
@@ -276,7 +276,7 @@ export function TelegramMessageBubble({
               style={[
                 styles.voiceBubble,
                 {
-                  backgroundColor: message.isOwn ? '#8B5CF6' : '#2A2A2A',
+                  backgroundColor: message.isOwn ? theme.chatBubbleOwn || '#8B5CF6' : theme.chatBubbleIncoming || '#2A2A2A',
                 },
               ]}
             >

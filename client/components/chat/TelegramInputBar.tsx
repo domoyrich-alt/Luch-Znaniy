@@ -74,9 +74,9 @@ export function TelegramInputBar({
       {/* Reply Preview */}
       {replyTo && (
         <View style={[styles.replyPreview, { backgroundColor: theme.backgroundSecondary }]}>
-          <View style={[styles.replyLine, { backgroundColor: '#8B5CF6' }]} />
+          <View style={[styles.replyLine, { backgroundColor: theme.primary }]} />
           <View style={styles.replyContent}>
-            <ThemedText style={[styles.replyAuthor, { color: '#8B5CF6' }]}>
+            <ThemedText style={[styles.replyAuthor, { color: theme.primary }]}>
               {replyTo.senderName}
             </ThemedText>
             <ThemedText style={[styles.replyText, { color: theme.textSecondary }]} numberOfLines={1}>
@@ -126,7 +126,7 @@ export function TelegramInputBar({
             {/* Send or Voice Button */}
             {messageText.trim() ? (
               <Pressable onPress={onSend} style={styles.iconButton}>
-                <View style={[styles.sendButton, { backgroundColor: '#8B5CF6' }]}>
+                <View style={[styles.sendButton, { backgroundColor: theme.primary }]}>
                   <Feather name="send" size={20} color="#FFFFFF" />
                 </View>
               </Pressable>
@@ -156,7 +156,7 @@ export function TelegramInputBar({
             </View>
 
             <Pressable onPress={onVoiceStop} style={styles.iconButton}>
-              <View style={[styles.sendButton, { backgroundColor: '#8B5CF6' }]}>
+              <View style={[styles.sendButton, { backgroundColor: theme.primary }]}>
                 <Feather name="check" size={20} color="#FFFFFF" />
               </View>
             </Pressable>

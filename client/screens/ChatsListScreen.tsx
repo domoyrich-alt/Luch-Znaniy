@@ -240,7 +240,7 @@ function SwipeableChatRow({ children, onDelete, onPin, onMute, onSwipeStart, onS
         <Animated.View 
           style={[
             swipeStyles.actionButton, 
-            { backgroundColor: '#8B5CF6', transform: [{ scale: rightScale }] }
+            { backgroundColor: theme.primary, transform: [{ scale: rightScale }] }
           ]}
         >
           <Feather name="bookmark" size={22} color="#FFF" />
@@ -520,7 +520,7 @@ export default function ChatsListScreen() {
             onPress={() => console.log('Edit mode')}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <ThemedText style={[styles.headerEditButton, { color: '#8B5CF6' }]}>
+            <ThemedText style={[styles.headerEditButton, { color: theme.primary }]}>
               Edit
             </ThemedText>
           </Pressable>
@@ -534,22 +534,22 @@ export default function ChatsListScreen() {
         </View>
         
         <View style={styles.headerRight}>
-          {/* SEARCH BUTTON */}
+          {/* Search button */}
           <Pressable
             style={[styles.headerIconButton]}
             onPress={() => setIsSearchMode(true)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Feather name="search" size={22} color="#8B5CF6" />
+            <Feather name="search" size={22} color={theme.primary} />
           </Pressable>
           
-          {/* NEW CHAT BUTTON */}
+          {/* New chat button */}
           <Pressable
             style={[styles.headerIconButton]}
             onPress={() => navigation.navigate("NewChat" as never)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Feather name="edit" size={22} color="#8B5CF6" />
+            <Feather name="edit" size={22} color={theme.primary} />
           </Pressable>
         </View>
       </View>
@@ -640,9 +640,9 @@ export default function ChatsListScreen() {
         />
       )}
 
-      {/* FLOATING ACTION BUTTON - НОВЫЙ ЧАТ */}
+      {/* Floating action button - new chat */}
       <Pressable
-        style={[styles.fab, { backgroundColor: '#8B5CF6' }]}
+        style={[styles.fab, { backgroundColor: theme.primary }]}
         onPress={() => navigation.navigate("NewChat" as never)}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >

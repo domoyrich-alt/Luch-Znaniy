@@ -678,7 +678,7 @@ export default function ChatsScreen() {
         </Animated.View>
 
         {/* Chat Background with Telegram-style pattern */}
-        <View style={[styles.messagesBackground, { backgroundColor: isDark ? '#0E0E0E' : '#E5DDD5' }]}>
+        <View style={[styles.messagesBackground, { backgroundColor: theme.chatBackground || (isDark ? '#0E0E0E' : '#E5DDD5') }]}>
           {/* Background pattern overlay */}
           <View style={styles.chatWallpaper} />
           

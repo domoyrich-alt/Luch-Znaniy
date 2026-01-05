@@ -8,7 +8,7 @@ import { useTheme } from "@/hooks/useTheme";
 interface TelegramChatHeaderProps {
   title: string;
   status?: string;
-  avatar: {
+  avatar?: {
     backgroundColor: string;
     text: string;
   };
@@ -43,12 +43,14 @@ export function TelegramChatHeader({
       </View>
 
       <Pressable onPress={onAvatarPress} style={styles.avatarContainer}>
-        <LinearGradient
-          colors={[avatar.backgroundColor, avatar.backgroundColor + 'CC']}
-          style={styles.avatar}
-        >
-          <ThemedText style={styles.avatarText}>{avatar.text}</ThemedText>
-        </LinearGradient>
+        {avatar && (
+          <LinearGradient
+            colors={[avatar.backgroundColor, avatar.backgroundColor + 'CC']}
+            style={styles.avatar}
+          >
+            <ThemedText style={styles.avatarText}>{avatar.text}</ThemedText>
+          </LinearGradient>
+        )}
       </Pressable>
     </View>
   );

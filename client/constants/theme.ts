@@ -28,6 +28,10 @@ export const Colors = {
     border: "#E5E7EB",
     cardBackground: "#FFFFFF",
     overlay: "rgba(0, 0, 0, 0.5)",
+    // Telegram-style chat colors
+    chatBubbleOwn: "#8B5CF6",
+    chatBubbleIncoming: "#E5E7EB",
+    chatBackground: "#E5DDD5",
   },
   dark: {
     text: "#ECEDEE",
@@ -53,6 +57,10 @@ export const Colors = {
     border: "#2A2A2A",
     cardBackground: "#1A1A1A",
     overlay: "rgba(0, 0, 0, 0.7)",
+    // Telegram-style chat colors
+    chatBubbleOwn: "#8B5CF6",
+    chatBubbleIncoming: "#2A2A2A",
+    chatBackground: "#0E0E0E",
   },
 };
 
