@@ -22,6 +22,9 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
+import { TelegramChatHeader } from "@/components/chat/TelegramChatHeader";
+import { TelegramMessageBubble } from "@/components/chat/TelegramMessageBubble";
+import { TelegramInputBar } from "@/components/chat/TelegramInputBar";
 
 const { width } = Dimensions.get('window');
 
@@ -70,7 +73,35 @@ interface Chat {
   isPinned?: boolean;
 }
 
-// Компонент сообщения
+// Компонент типинга
+const TypingIndicator = ({ users }: { users: string[] }) => {
+  const { theme } = useTheme();
+  const dotAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(dotAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(dotAnim, { toValue: 0, duration: 600, useNativeDriver: true })
+      ])
+    ).start();
+  }, []);
+  return (
+    <View style={styles.typingContainer}>
+      <View style={[styles.typingBubble, { backgroundColor: '#2A2A2A' }]}>
+        <ThemedText style={[styles.typingText, { color: theme.textSecondary }]}>
+          {users.join(', ')} {users.length === 1 ? 'печатает' : 'печатают'}
+        </ThemedText>
+        <Animated.View style={[styles.typingDots, { opacity: dotAnim }]}>
+          <View style={[styles.typingDot, { backgroundColor: '#8B5CF6' }]} />
+          <View style={[styles.typingDot, { backgroundColor: '#8B5CF6' }]} />
+          <View style={[styles.typingDot, { backgroundColor: '#8B5CF6' }]} />
+        </Animated.View>
+      </View>
+    </View>
+  );
+};
+
+// Keep legacy component for list view compatibility
 const AnimatedMessage = ({ message, onLongPress, chatType, theme }: { message: Message; onLongPress: (msg: Message) => void; chatType: Chat["type"]; theme: any }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -255,32 +286,7 @@ const AnimatedMessage = ({ message, onLongPress, chatType, theme }: { message: M
   );
 };
 
-// Компонент типинга
-const TypingIndicator = ({ users }: { users: string[] }) => {
-  const dotAnim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(dotAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.timing(dotAnim, { toValue: 0, duration: 600, useNativeDriver: true })
-      ])
-    ).start();
-  }, []);
-  return (
-    <View style={styles.typingContainer}>
-      <View style={styles.typingBubble}>
-        <ThemedText style={styles.typingText}>
-          {users.join(', ')} {users.length === 1 ? 'печатает' : 'печатают'}
-        </ThemedText>
-        <Animated.View style={[styles.typingDots, { opacity: dotAnim }]}>
-          <View style={styles.typingDot} />
-          <View style={styles.typingDot} />
-          <View style={styles.typingDot} />
-        </Animated.View>
-      </View>
-    </View>
-  );
-};
+// Компонент типинга - removed duplicate, kept above
 
 // Основной компонент
 export default function ChatsScreen() {
@@ -648,112 +654,42 @@ export default function ChatsScreen() {
   );
 
   if (screenMode === 'chat' && currentChat) {
+    const chatStatus = currentChat.type === 'private'
+      ? (currentChat.isOnline ? 'online' : 'last seen recently')
+      : `${currentChat.members} members`;
+
     return (
       <KeyboardAvoidingView 
         style={styles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
       >
-        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+        <StatusBar barStyle="light-content" />
         
-        <Animated.View style={[{ opacity: headerAnim }, { opacity: fadeAnim }]}>
-          <LinearGradient
-            colors={currentChat.type === 'group' 
-              ? ['#1A1A1A', '#2A2A2A', '#1A1A1A'] 
-              : [theme.backgroundRoot, theme.backgroundSecondary, theme.backgroundRoot]
-            }
-            style={[styles.header, { paddingTop: headerHeight }]}
-          >
-            <BlurView intensity={20} style={StyleSheet.absoluteFill} />
-            
-            <View style={styles.headerContent}>
-              <Pressable onPress={backToList} style={styles.backButton}>
-                <LinearGradient
-                  colors={['#4ECDC4', '#45B7D1']}
-                  style={styles. backButtonGradient}
-                >
-                  <Feather name="arrow-left" size={20} color="#FFFFFF" />
-                </LinearGradient>
-                <ThemedText style={styles.backText}>Back</ThemedText>
-              </Pressable>
-              
-              <Pressable style={styles.chatInfo}>
-                <View style={styles. chatTitleContainer}>
-                  <ThemedText style={styles.chatTitle} numberOfLines={1}>{currentChat.title}</ThemedText>
-                  {currentChat.type === 'private' && (
-                    <View style={styles.statusContainer}>
-                      <View style={[styles.onlineIndicator, { backgroundColor: currentChat.isOnline ? '#22C55E' : '#666666' }]} />
-                      <ThemedText style={styles.chatStatus}>
-                        {currentChat. isOnline ? 'online' : 'last seen recently'}
-                      </ThemedText>
-                    </View>
-                  )}
-                  {currentChat.type === 'group' && (
-                    <ThemedText style={styles.chatStatus}>
-                      {currentChat. members} members{typingUsers.length > 0 ?  `, ${typingUsers.join(', ')} печатает... ` : ''}
-                    </ThemedText>
-                  )}
-                </View>
-              </Pressable>
-              
-              {currentChat.avatar && (
-                <LinearGradient
-                  colors={[currentChat.avatar.backgroundColor, currentChat.avatar.backgroundColor + 'DD']}
-                  style={styles.headerAvatar}
-                >
-                  <ThemedText style={styles.headerAvatarText}>{currentChat. avatar.text}</ThemedText>
-                </LinearGradient>
-              )}
-
-              <View style={styles.headerActions}>
-                <Pressable style={styles.headerActionButton}>
-                  <Feather name="phone" size={20} color={currentChat.type === 'group' ? '#CCCCCC' : theme.text} />
-                </Pressable>
-                <Pressable style={styles.headerActionButton}>
-                  <Feather name="more-vertical" size={20} color={theme.text} />
-                </Pressable>
-              </View>
-            </View>
-
-            {currentChat.type === 'group' && chatData.pinnedMessage && (
-              <LinearGradient
-                colors={['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']}
-                style={styles. pinnedMessage}
-              >
-                <View style={styles.pinnedIcon}>
-                  {/* Заменить иконку pin на допустимую из Feather */}
-                  <Feather name="anchor" size={16} color="#4ECDC4" />
-                </View>
-                <View style={styles.pinnedContent}>
-                  <ThemedText style={styles.pinnedLabel}>Pinned Message</ThemedText>
-                  <ThemedText style={styles. pinnedText}>
-                    {chatData.pinnedMessage.text}
-                  </ThemedText>
-                </View>
-                <Pressable style={styles.pinnedClose}>
-                  <Feather name="x" size={18} color="#CCCCCC" />
-                </Pressable>
-              </LinearGradient>
-            )}
-          </LinearGradient>
+        {/* Telegram-style Header */}
+        <Animated.View style={[{ opacity: fadeAnim }, { paddingTop: headerHeight }]}>
+          <TelegramChatHeader
+            title={currentChat.title}
+            status={chatStatus}
+            avatar={currentChat.avatar}
+            onBackPress={backToList}
+            onAvatarPress={() => console.log('Avatar pressed')}
+          />
         </Animated.View>
 
-        <LinearGradient
-          colors={currentChat.type === 'group' 
-            ? ['#000000', '#1A1A1A', '#000000'] 
-            :  [theme.backgroundRoot, theme.backgroundSecondary, theme.backgroundRoot]
-          }
-          style={styles.messagesBackground}
-        > 
+        {/* Chat Background with Telegram-style pattern */}
+        <View style={[styles.messagesBackground, { backgroundColor: isDark ? '#0E0E0E' : '#E5DDD5' }]}>
+          {/* Background pattern overlay */}
+          <View style={styles.chatWallpaper} />
+          
           <FlatList
             ref={flatListRef}
             data={messages} 
             renderItem={({ item }) => (
-              <AnimatedMessage 
-                message={item}  
+              <TelegramMessageBubble
+                message={item}
                 onLongPress={handleLongPress}
-                chatType={currentChat.type}
-                theme={theme} 
+                showAvatar={currentChat.type === 'group' && !item.isOwn}
               />
             )}
             keyExtractor={(item) => item.id} 
@@ -768,122 +704,34 @@ export default function ChatsScreen() {
           {typingUsers.length > 0 && (
             <TypingIndicator users={typingUsers} />
           )}
-        </LinearGradient>
+        </View>
 
         {showScrollToBottom && (
           <Pressable onPress={scrollToBottom} style={styles.scrollToBottomButton}>
-            <LinearGradient
-              colors={['#4ECDC4', '#45B7D1']}
-              style={styles.scrollToBottomGradient}
-            >
-              <Feather name="chevron-down" size={24} color="#FFFFFF" />
-            </LinearGradient>
+            <View style={[styles.scrollToBottomCircle, { backgroundColor: theme.backgroundSecondary }]}>
+              <Feather name="chevron-down" size={24} color={theme.text} />
+            </View>
           </Pressable>
         )}
 
-        {replyToMessage && (
-          <Animated.View style={styles.replyPreview}>
-            <LinearGradient
-              colors={[theme.backgroundSecondary + 'DD', theme.backgroundSecondary]}
-              style={styles.replyPreviewBg}
-            >
-              <View style={[styles.replyPreviewLine, { backgroundColor: replyToMessage.senderAvatar?. backgroundColor }]} />
-              <View style={styles.replyPreviewContent}>
-                <ThemedText style={styles.replyPreviewAuthor}>{replyToMessage.senderName}</ThemedText>
-                <ThemedText style={styles. replyPreviewText} numberOfLines={1}>
-                  {replyToMessage.text}
-                </ThemedText>
-              </View>
-              <Pressable onPress={() => setReplyToMessage(null)} style={styles.replyPreviewClose}>
-                <Feather name="x" size={20} color={theme.text} />
-              </Pressable>
-            </LinearGradient>
-          </Animated.View>
-        )}
-
-        <LinearGradient
-          colors={currentChat.type === 'group' 
-            ? ['#1A1A1A', '#2A2A2A'] 
-            : [theme.backgroundRoot, theme.backgroundSecondary]
-          }
-          style={styles.inputContainer}
-        >
-          <BlurView intensity={10} style={StyleSheet.absoluteFill} />
-          
-          <View style={styles.inputRow}>
-            <View style={styles.attachmentButtons}>
-              <Pressable style={styles.attachButton}>
-                <LinearGradient colors={['#FF6B6B', '#FF4757']} style={styles.attachButtonGradient}>
-                  <Feather name="camera" size={20} color="#FFFFFF" />
-                </LinearGradient>
-              </Pressable>
-              <Pressable style={styles.attachButton}>
-                <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.attachButtonGradient}>
-                  <Feather name="paperclip" size={20} color="#FFFFFF" />
-                </LinearGradient>
-              </Pressable>
-            </View>
-            
-            <LinearGradient
-              colors={[theme.backgroundSecondary || '#2A2A2A', (theme.backgroundSecondary || '#2A2A2A') + 'AA']}
-              style={styles. inputWrapper}
-            >
-              <TextInput
-                ref={inputRef}
-                style={[styles.messageInput, { color: theme.text || '#FFFFFF' }]}
-                placeholder="Message"
-                placeholderTextColor="#666666"
-                value={messageText}
-                onChangeText={setMessageText}
-                multiline
-                maxLength={4096}
-                textAlignVertical="center"
-              />
-              
-              <Pressable style={styles. emojiButton}>
-                <Feather name="smile" size={22} color="#666666" />
-              </Pressable>
-            </LinearGradient>
-
-            {isRecording ?  (
-              <View style={styles.recordingContainer}>
-                <LinearGradient colors={['#FF6B6B', '#FF4757']} style={styles.recordingBg}>
-                  <ThemedText style={styles.recordingText}>
-                    {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
-                  </ThemedText>
-                  <View style={styles.recordingIndicator} />
-                </LinearGradient>
-                <Pressable onPress={stopRecording} style={styles.stopRecordingButton}>
-                  <LinearGradient colors={['#4ECDC4', '#45B7D1']} style={styles.stopRecordingGradient}>
-                    <Feather name="send" size={20} color="#FFFFFF" />
-                  </LinearGradient>
-                </Pressable>
-              </View>
-            ) : (
-              <View style={styles.sendButtons}>
-                {messageText.trim() ? (
-                  <Pressable onPress={sendMessage} style={styles.sendButton}>
-                    <LinearGradient colors={['#4ECDC4', '#45B7D1']} style={styles.sendButtonGradient}>
-                      <Feather name="send" size={20} color="#FFFFFF" />
-                    </LinearGradient>
-                  </Pressable>
-                ) : (
-                  <Pressable onPress={startRecording} style={styles.voiceButton}>
-                    <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.voiceButtonGradient}>
-                      <Feather name="mic" size={20} color="#FFFFFF" />
-                    </LinearGradient>
-                  </Pressable>
-                )}
-                
-                <Pressable style={styles.clockButton}>
-                  <LinearGradient colors={['#FFA500', '#FF8C00']} style={styles. clockButtonGradient}>
-                    <Feather name="clock" size={18} color="#FFFFFF" />
-                  </LinearGradient>
-                </Pressable>
-              </View>
-            )}
-          </View>
-        </LinearGradient>
+        {/* Telegram-style Input Bar */}
+        <TelegramInputBar
+          messageText={messageText}
+          onMessageTextChange={setMessageText}
+          onSend={sendMessage}
+          onAttach={() => console.log('Attach')}
+          onEmoji={() => console.log('Emoji')}
+          onVoiceStart={startRecording}
+          onVoiceStop={stopRecording}
+          isRecording={isRecording}
+          recordingDuration={recordingDuration}
+          replyTo={replyToMessage ? {
+            messageId: replyToMessage.id,
+            senderName: replyToMessage.senderName,
+            text: replyToMessage.text
+          } : null}
+          onCancelReply={() => setReplyToMessage(null)}
+        />
       </KeyboardAvoidingView>
     );
   }
@@ -1140,18 +988,17 @@ const styles = StyleSheet.create({
   typingBubble: { 
     flexDirection: 'row', 
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
     paddingHorizontal: 16,
-    paddingVertical:  12,
+    paddingVertical: 12,
     borderRadius: 20,
     alignSelf: 'flex-start'
   },
-  typingText: { color: '#CCCCCC', fontSize: 14, marginRight: 8 },
+  typingText: { fontSize: 14, marginRight: 8 },
   typingDots: { flexDirection: 'row', gap: 4 },
-  typingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ECDC4' },
+  typingDot: { width: 6, height: 6, borderRadius: 3 },
   
   scrollToBottomButton: { position: 'absolute', bottom: 100, right: 24, zIndex: 100 },
-  scrollToBottomGradient: { 
+  scrollToBottomCircle: { 
     width: 48, 
     height: 48, 
     borderRadius: 24, 
@@ -1159,9 +1006,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity:  0.3,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8
+  },
+  
+  chatWallpaper: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.05,
   },
   
   replyPreview: { marginHorizontal: 16, marginBottom: 8, borderRadius: 16, overflow: 'hidden' },

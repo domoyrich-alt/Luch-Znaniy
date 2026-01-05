@@ -240,7 +240,7 @@ function SwipeableChatRow({ children, onDelete, onPin, onMute, onSwipeStart, onS
         <Animated.View 
           style={[
             swipeStyles.actionButton, 
-            { backgroundColor: theme.primary, transform: [{ scale: rightScale }] }
+            { backgroundColor: '#8B5CF6', transform: [{ scale: rightScale }] }
           ]}
         >
           <Feather name="bookmark" size={22} color="#FFF" />
@@ -505,7 +505,7 @@ export default function ChatsListScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* HEADER КАК В TELEGRAM - МИНИМАЛИСТИЧНЫЙ И КРАСИВЫЙ */}
+      {/* HEADER - TELEGRAM STYLE WITH PURPLE ACCENTS */}
       <View
         style={[
           styles.header,
@@ -516,7 +516,21 @@ export default function ChatsListScreen() {
         ]}
       >
         <View style={styles.headerLeft}>
-          <ThemedText style={styles.headerTitle}>Чаты</ThemedText>
+          <Pressable
+            onPress={() => console.log('Edit mode')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ThemedText style={[styles.headerEditButton, { color: '#8B5CF6' }]}>
+              Edit
+            </ThemedText>
+          </Pressable>
+        </View>
+        
+        <View style={styles.headerCenter}>
+          <View style={styles.headerTitleContainer}>
+            <Feather name="folder" size={18} color={theme.text} style={{ marginRight: 6 }} />
+            <ThemedText style={styles.headerTitle}>Chats</ThemedText>
+          </View>
         </View>
         
         <View style={styles.headerRight}>
@@ -526,7 +540,7 @@ export default function ChatsListScreen() {
             onPress={() => setIsSearchMode(true)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Feather name="search" size={20} color={theme.primary} />
+            <Feather name="search" size={22} color="#8B5CF6" />
           </Pressable>
           
           {/* NEW CHAT BUTTON */}
@@ -535,7 +549,7 @@ export default function ChatsListScreen() {
             onPress={() => navigation.navigate("NewChat" as never)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Feather name="edit-3" size={20} color={theme.primary} />
+            <Feather name="edit" size={22} color="#8B5CF6" />
           </Pressable>
         </View>
       </View>
@@ -628,11 +642,11 @@ export default function ChatsListScreen() {
 
       {/* FLOATING ACTION BUTTON - НОВЫЙ ЧАТ */}
       <Pressable
-        style={[styles.fab, { backgroundColor: theme.primary }]}
+        style={[styles.fab, { backgroundColor: '#8B5CF6' }]}
         onPress={() => navigation.navigate("NewChat" as never)}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
-        <Feather name="edit-3" size={24} color="#FFFFFF" />
+        <Feather name="edit" size={24} color="#FFFFFF" />
       </Pressable>
     </ThemedView>
   );
@@ -657,16 +671,30 @@ const styles = StyleSheet.create({
   headerLeft: {
     flex: 1,
   },
+  headerEditButton: {
+    fontSize: 17,
+    fontWeight: "400",
+  },
+  headerCenter: {
+    flex: 2,
+    alignItems: "center",
+  },
+  headerTitleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   headerTitle: { 
-    fontSize: 32, 
-    fontWeight: "700",
+    fontSize: 20, 
+    fontWeight: "600",
   },
   headerRight: {
+    flex: 1,
     flexDirection: "row",
-    gap: 4,
+    gap: 8,
+    justifyContent: "flex-end",
   },
   headerIconButton: {
-    padding: 12,
+    padding: 8,
     borderRadius: 20,
   },
   
