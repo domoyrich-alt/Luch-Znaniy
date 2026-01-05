@@ -98,7 +98,7 @@ function ChatsHeader({
       <View style={styles.headerCenter}>
         <View style={styles.headerTitleContainer}>
           <Feather name="folder" size={18} color={colors.textPrimary} style={{ marginRight: 6 }} />
-          <ThemedText style={styles.headerTitle}>Chats</ThemedText>
+          <ThemedText style={styles.headerTitle}>Чаты</ThemedText>
         </View>
       </View>
       
